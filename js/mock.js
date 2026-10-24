@@ -494,7 +494,7 @@ const textOf = m => {
 };
 const hasImage = m => !!m && Array.isArray(m.content) && m.content.some(p => p && p.type === 'image_url');
 const isProbe = t => /主动开启/.test(t);
-const isContext = t => /讲完一道错题/.test(t);
+const isContext = t => /讲完一道错题|做过这道题/.test(t);
 
 // which mock problem a conversation is about; null when none of them is named
 function topicIn(text) {
