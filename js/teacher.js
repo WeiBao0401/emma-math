@@ -61,7 +61,7 @@ ${evidence ? `你看到的证据：${evidence}。` : ''}
 
 export function problemContext({ problem = {}, diagnosis = {} } = {}) {
   const lines = [
-    '（这一段是程序发的，她看不到。）她刚在 App 里讲完一道错题，现在想接着问。这道题的情况：',
+    '（这一段是程序发的，她看不到。）她刚在 App 里做过这道题（讲错题或者复习时），现在想接着问。这道题的情况：',
     `题目：${problem.stem || ''}`,
     problem.options && problem.options.length ? `选项：${problem.options.join('；')}` : '',
     problem.her_work && problem.her_work.length ? `她当时写的：${problem.her_work.join(' / ')}` : '',

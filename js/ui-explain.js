@@ -17,6 +17,7 @@
 //   contrast(problem, diag)                第 8 屏左右对照的两列，只高亮分叉的那一行
 //   matchLine(line, solution, fallback)    正确过程里和她写错的那一行最像的一行（字的两两组合重合度）
 //   planSave({ st, problem, diag, cards, id, ... }) -> { put, cardId, quota, result, variants }   收进本子：新卡、同坑合并、轻卡
+//   directOffer(st, diag, problem, { late }) -> '' | 'text' | 'big'   提示屏上的“直接讲吧”：不出 | 右下角文字按钮 | 21:00 以后最上面的大按钮
 //   quotaAfter(quota, day, n)、countsForQuota(st)、isLight(st)、pitName(diag, curriculum)（先用 notebook.shortName）
 //   findMergeTarget、mergeLocal、attachLocal：notebook.fileProblem 不在时的最小同坑合并
 //   nextInQueue(queue, photoId, idx)、addPending(pending, items, { front })、doneView(result, hasNext)
@@ -27,9 +28,14 @@
 //             点对了 → fix（“对，就是第 ① 行”）；点错了或看不出 → fix，第 0 级（“问题在第 ① 行”）；
 //             诊断说不出是哪一行 → redo
 //   redo      没写过程（或诊断没给行号）：“在纸上再做一遍，答案写这里”
-//   fix       改那一行，填新答案。对了 → twin（found 'self' 或 'located'，轻卡，跳过提示）；错了 → hint1
+//   fix       改那一行，填新答案。对了 → save（found 'self' 或 'located'，轻卡，跳过提示）；错了 → hint1
+//             自己改对的当天不做同构题（DESIGN 第 1 节“自己改对的题当天做不做同构题”、4.4）：隔一天比当天多做有用，
+//             也更快。直接收成轻卡，第 2 天再来一道。讲题时核对过的 twin 放进卡的池子，明天不用等。
 //   hint1     第 1 级二选一。选对：“对。”；选错：点明不对的是哪个、对的是哪个。都进 hint2
 //   hint2     第 2 级：讲为什么，她从这一步接着做。对了 → sentence（found 'hint'）；同一步错 2 次 → explain
+//             “直接讲吧”（DESIGN 第 1 节、3.2 屏 7、7.3）：她改过一次、点过一次二选一以后，提示屏都有这个按钮，
+//             点了直接 explain，found 'explain'，之后照样做同构题。21:00 以后（notebook.isLate）它是最上面的大按钮。
+//             先试再讲证据更强，所以前两级要她自己碰过；选择题没有“改一行”这一级，那一级不用等
 //   explain   第 3 级：左右对照 + 3-5 步一步一张 + remember。“懂了，做一道” → sentence；“还是不太懂” → 再给一遍
 //             hint2 和最后一步，卡上记 confused，可以“先收进本子”（不做同构题）或“记下来问老师”；“这题有问题” → 收进问老师
 //   sentence  self_explain 二选一补全“我错在：……”，选错轻轻纠正；mySentence 存补全后的那句
@@ -38,6 +44,7 @@
 //   ask       诊断 checked 'unsure'：“这道我拿不准，记下来问老师。”建 status 'ask' 的卡
 //   save      建卡、存、名额加一（自己改对的不加）、后台出变式题 → done
 //   done      “收进本子了。坑：…。明天：把原题再做一遍，再加一道新题。”“下一道”“今天先到这儿”
+//             轻卡收尾一句“你自己改对了。明天我再给你一道新的，换个样子看看。”；底下一直有“还有不明白的？问我”（v0.3）
 //   error     诊断失败：kidMessage(err, { where: 'explain' })，“再试一次”或“先放进待讲”
 // 每次作答先记在 state.attempts，收进本子时连同卡的 id 一起写进 attempts（store.addAttempt，CONTRACTS 12 的字段）。
 //
@@ -60,7 +67,7 @@ export const SLOW_MS = 25000;        // 等诊断超过这么久，说一句“�
 export const TWIN_WAIT_MS = 45000;   // 等变式池里的同构题最多这么久，再没有就跳过同构题
 export const HINT2_TRIES = 2;        // 同一步最多追 2 次，还不对就直接讲（C 7.1）
 
-// 她看到的固定文案：弯引号，不用破折号和感叹号，句子短；App 自称“我”，学校老师叫“老师”
+// 她看到的固定文案：弯引号，不用破折号和感叹号，句子短；App 自称“我”，真老师叫“学校老师”（DESIGN 7.6）
 export const COPY = {
   find: '先自己找找：从哪一行开始不对？点那一行。',
   half: '这题你做对了一大半。',
@@ -93,7 +100,7 @@ export const COPY = {
   againIntro: '没关系。再看一遍这两句。',
   againLater: '先收进本子，明天换个讲法再来。',
   saveNow: '先收进本子',
-  askTeacher: '记下来问老师',
+  askTeacher: '记下来问学校老师',
   flag: '这题有问题',
   flaggedTwin: '记下了，这道题不算。',
   sentenceLabel: '补全这句话',
@@ -107,18 +114,18 @@ export const COPY = {
   tryAgain: '再试一次。',
   saving: '正在收进本子……',
   saveFailed: '没存上，再试一次。',
-  unsure: '这道我拿不准，记下来问老师。',
-  unsureMore: '问过老师以后，以老师讲的为准。',
+  unsure: '这道我拿不准，记下来问问学校老师。',
+  unsureMore: '问过学校老师以后，以学校老师讲的为准。',
   flaggedTitle: '记下了。',
   flaggedMore: '这道题先不练，家长会看到。',
   confusedTitle: '记下来了。',
-  confusedMore: '问老师的时候带上这道题。',
+  confusedMore: '问学校老师的时候带上这道题。',
+  direct: '直接讲吧',
   saved: '收进本子了。',
-  savedLight: '你自己改对的。收进本子了。',
   merged: '这个坑本子里已经有了，这道题放在它下面。',
   pit: '坑：',
   tomorrow: '明天：把原题再做一遍，再加一道新题。',
-  tomorrowLight: '明天：再做一道新题。',
+  lightClose: '你自己改对了。明天我再给你一道新的，换个样子看看。',
   tomorrowRetell: '明天换个讲法再来，把原题再做一遍。',
   nextOne: '下一道',
   askMe: '还有不明白的？问我',
@@ -296,8 +303,19 @@ export function quotaAfter(quota, day, n = 1) {
 }
 // 只算走了提示阶梯的题：她在第 6 屏自己改对的不占名额，拿不准没讲的也不占
 export const countsForQuota = st => !!st && st.level >= 1 && st.ask !== 'unsure';
-// 轻卡：自己改对（指了位置后改对也算），同构题没有两次都错
+// 轻卡：自己改对（指了位置后改对也算），同构题没有两次都错（现在自己改对的当天不做同构题；v0.3 留下的半路状态还会走到这里）
 export const isLight = st => !!st && (st.found === 'self' || st.found === 'located') && st.twinOk !== false && !st.ask;
+
+// “直接讲吧”出不出、出成什么样。前两级她都自己碰过才出：改过一次（fixTries，选择题没有这一级），
+// 点过一次二选一（这道题的讲解没有二选一时不等）。只在提示屏（hint1、hint2）上，讲清楚那一屏本身就是第 4 级。
+const LADDER = new Set(['hint1', 'hint2']);
+export function directOffer(st, diag, problem = {}, { late = false } = {}) {
+  if (!st || !diag || diag.checked === 'unsure' || !LADDER.has(st.step)) return '';
+  const fixed = (Number(st.fixTries) || 0) >= 1 || isChoice(problem, diag);
+  const picked = (st.hint1Pick !== null && st.hint1Pick !== undefined) || !diag.hint1;
+  if (!fixed || !picked) return '';
+  return late ? 'big' : 'text';
+}
 
 // 同坑合并：同一个错因标签、还在练的卡（最近的那张）
 export function findMergeTarget(cards = [], tag = '') {
@@ -391,6 +409,10 @@ export function planSave({ st, problem = {}, diag = {}, cards = [], id, photoId 
     if (how === 'new') Object.assign(card, { found: st.found || '', mySentence: st.mySentence || '', problemIdx: st.idx });
   }
   if (ask) Object.assign(card, { status: 'ask', due: '', light: false, askTeacher: { reason: ask, day: today } });
+  // 今天没做的同构题（自己改对的不做，或讲完先收进本子）：讲题时已经核对过，放进卡的池子。
+  // 明天的复习先取近变式；后台出题没成功时，这道就在手边，不用等也不用再花钱（C 4.4）
+  const dt = diag && diag.twin;
+  if (!ask && !st.twin && dt && str(dt.q) && str(dt.answer)) card.pool = poolFrom([{ ...dt, level: '同构' }], card.pool || [], card.used || []);
   // what this session learned about the pit goes on the card either way
   if (st.flagged && st.flagged.length) card.flagged = [...(card.flagged || []), ...st.flagged];
   if (st.confused) card.confused = true;
@@ -446,7 +468,7 @@ export function doneView(result = {}) {
   if (r.ask === 'confused') return { title: COPY.confusedTitle, lines: [COPY.confusedMore] };
   const pit = [r.short ? COPY.pit + r.short : '', r.section].filter(Boolean);
   const merged = r.how === 'merged' ? [COPY.merged] : [];
-  if (r.light) return { title: COPY.savedLight, lines: [...merged, ...pit, COPY.tomorrowLight] };
+  if (r.light) return { title: COPY.saved, lines: [...merged, ...pit, COPY.lightClose] };
   const tomorrow = r.twinOk === false || r.twinSkipped ? COPY.tomorrowRetell : COPY.tomorrow;
   return { title: COPY.saved, lines: [...merged, ...pit, tomorrow].filter(Boolean) };
 }
@@ -459,7 +481,7 @@ export const problemSig = (p = {}) => JSON.stringify([p.stem, p.her_work, p.her_
 export function initState({ photoId = '', idx = 0, problem = {}, now = new Date().toISOString() } = {}) {
   return {
     v: 1, key: keyOf(photoId, idx), photoId: str(photoId), idx: Number(idx) || 0, step: entryStep(problem), prev: '', psig: problemSig(problem),
-    picked: null, level: -1, found: '', fixTries: 0, tries: 0, hint1Pick: null, explainShown: 1, again: false,
+    picked: null, level: -1, found: '', fixTries: 0, tries: 0, hint1Pick: null, direct: false, explainShown: 1, again: false,
     sentencePick: null, mySentence: '', twin: null, twinTries: 0, twinOk: null, twinSkipped: false, confused: false,
     flagged: [], ask: '', error: '', note: null, attempts: [], diagnosis: null, cardId: '', result: null, startedAt: now,
   };
@@ -540,7 +562,8 @@ export function reduce(s0, ev = {}, env = {}) {
         else toExplain(s, COPY.together);
         break;
       }
-      if (ev.ok) { s.found = s.step === 'fix' && s.level === 0 ? 'located' : 'self'; s.step = 'twin'; s.note = note('ok', COPY.selfFixed); }
+      // 自己改对的：当天不做同构题，直接收成轻卡（第 1 节冲突表、4.4）
+      if (ev.ok) { s.found = s.step === 'fix' && s.level === 0 ? 'located' : 'self'; s.step = 'save'; s.note = note('ok', COPY.selfFixed); }
       else { s.level = Math.max(s.level, 1); s.step = 'hint1'; s.tries = 0; s.note = note('info', COPY.stepByStep); }
       break;
     }
@@ -554,6 +577,13 @@ export function reduce(s0, ev = {}, env = {}) {
         : note('info', `不是“${h1.options[c]}”，是“${h1.options[h1.answer]}”。${COPY.commonWrong}`);
       s.step = 'hint2';
       s.tries = 0;
+      break;
+    }
+    case 'direct': {   // “直接讲吧”：跳到讲清楚（第 4 级），之后照样一句话和同构题
+      if (!directOffer(s, d, problem)) break;
+      s.direct = true;
+      s.found = 'explain';
+      toExplain(s);
       break;
     }
     case 'next-step': if (s.step === 'explain') s.explainShown = Math.min((s.explainShown || 1) + 1, Math.max(1, (d && d.explain || []).length)); break;
@@ -582,7 +612,10 @@ export function reduce(s0, ev = {}, env = {}) {
     }
     case 'continue': if (s.step === 'sentence' && s.sentencePick !== null) s.step = 'twin'; break;
     case 'saved':
-      if (s.step === 'save' || s.step === 'ask') { s.step = 'done'; s.cardId = ev.cardId || ''; s.result = ev.result || null; s.attempts = []; }
+      if (s.step === 'save' || s.step === 'ask') {
+        s.step = 'done'; s.cardId = ev.cardId || ''; s.result = ev.result || null; s.attempts = [];
+        if (s.result && s.result.light) s.note = null;   // 收尾那句已经说了“你自己改对了”，上面不再重复
+      }
       break;
     case 'error':
       if (ENDED.has(s.step)) break;
@@ -967,6 +1000,30 @@ export function createExplain(ctx) {
     return host;
   }
 
+  // 21:00 以后算晚（notebook.isLate；没有它就看本地钟点）
+  const lateNow = () => { try { return typeof NB.isLate === 'function' ? !!NB.isLate(new Date()) : new Date().getHours() >= 21; } catch { return false; } };
+  const directKind = c => directOffer(c.st, c.st.diagnosis, c.problem, { late: lateNow() });
+  // “直接讲吧”：平时是右下角的文字按钮；晚了是这一屏最上面的大按钮
+  function directEl(c, kind) {
+    const tap = () => dispatch({ type: 'direct' });
+    if (kind === 'big') {
+      return h('div', { className: 'ex-direct big' }, h('button', { type: 'button', className: 'btn btn-big', on: { click: tap } },
+        h('span', { text: COPY.direct }), icon('chev')));
+    }
+    if (kind === 'text') {
+      return h('div', { className: 'ex-direct' }, h('button', { type: 'button', className: 'text-btn accent', on: { click: tap } },
+        h('span', { text: COPY.direct }), icon('chev')));
+    }
+    return null;
+  }
+  // 提示屏（第 2、3 级）都套这一层：晚上大按钮放最上面，平时文字按钮放最下面
+  function withDirect(c, parts) {
+    const kind = directKind(c);
+    if (kind === 'big') return [directEl(c, kind), ...parts];
+    if (kind === 'text') return [...parts, directEl(c, kind)];
+    return parts;
+  }
+
   function flagBtn(c, q) {
     return h('div', { className: 'ex-flag-row' }, h('button', { type: 'button', className: 'text-btn ex-flag', text: COPY.flag, on: { click: () => dispatch({ type: 'flag', q }) } }));
   }
@@ -1009,7 +1066,7 @@ export function createExplain(ctx) {
     const t = st.step === 'twin' ? twinEnv(c) : 0;
     return JSON.stringify([st.step, st.note, st.picked, st.hint1Pick, st.sentencePick, st.explainShown, st.again, st.fixTries,
       st.twinTries, st.tries, st.step === 'redo' ? answerKind(st.diagnosis, c.problem) : !!st.diagnosis, st.error, st.result,
-      t === undefined ? 'loading' : t ? t.q : t, c.selfCheck, !!c.pending, !!c.saveFailed]);
+      t === undefined ? 'loading' : t ? t.q : t, c.selfCheck, !!c.pending, !!c.saveFailed, directKind(c)]);
   }
 
   function render(force = false) {
@@ -1057,20 +1114,20 @@ export function createExplain(ctx) {
         if (!d) return [h('h1', { className: 'ex-q', text: COPY.looking }), skBars([88, 64])];
         const h1 = d.hint1;
         const wl = wlOf(d, p);
-        return [
+        return withDirect(c, [
           noteEl(st.note),
           label(COPY.think),
           mathText((wl >= 0 ? `第 ${lineLabel(wl)} 行：` : '') + h1.q, { tag: 'h1', className: 'ex-q' }),
           optButtons(h1.options, st.hint1Pick, h1.answer, i => dispatch({ type: 'hint1', choice: i }), c.key + '#h1'),
-        ];
+        ]);
       }
       case 'hint2':
-        return [
+        return withDirect(c, [
           noteEl(st.note),
           mathText(d.hint2, { tag: 'p', className: 'ex-hint' }),
           instr(COPY.continueHere),
           answerBox(c, 'orig'),
-        ];
+        ]);
       case 'explain': return explainView(c);
       case 'sentence': {
         const se = d.self_explain;

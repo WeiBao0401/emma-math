@@ -9,10 +9,14 @@
 .home-body{flex:1;display:flex;flex-direction:column;padding-top:8px}
 
 .home-hello{margin-top:40px;font:600 32px/1.22 var(--serif);letter-spacing:-.01em;text-wrap:pretty}
+/* v0.3.1 招呼下面那一句：最近一件具体的事（“昨天那道 −3² 的题，今天在复习里等你。”），像老师见面时顺口提一句 */
+.home-greet{margin-top:12px;font:500 21px/1.5 var(--serif);max-width:28em;text-wrap:pretty}
 
 .home-review{display:flex;flex-direction:column;margin-top:40px}
 .home-line{font-size:26px;max-width:24em}
 .home-why{margin-top:12px;font-size:16px;line-height:1.6;color:var(--muted);text-wrap:pretty;max-width:34em}
+/* 有复习时不再有“今天要复习几道”那一行（主按钮说约几分钟），“为什么先练这个”就是这一块的第一行 */
+.home-review>.home-why:first-child{margin-top:0;font-size:17px}
 .home-actions{display:flex;flex-direction:column;align-items:stretch;margin-top:32px}
 .home-actions .btn-big{width:100%;justify-content:center}
 .home-review .sk-bars{max-width:420px}
@@ -22,13 +26,15 @@
 .home-snap .btn{min-height:52px;padding:0 22px 0 18px}
 .home-note{margin-top:20px}
 
-/* 底部一行：待讲 N 道 · 错题本 · 问老师 N 道 */
+/* 底部一行：明天先讲 N 道 · 错题本 · 问学校老师（有要问的题时带一个小圆点，不写数字） */
 .home-links{display:flex;flex-wrap:wrap;align-items:center;gap:4px 28px;margin-top:40px;padding-top:10px;border-top:1px solid var(--rule)}
 .home-links .text-btn{margin:0;padding:0 4px;min-height:48px;font-size:16px;color:var(--ink)}
 .home-links .text-btn.accent{color:var(--accent);font-weight:600}
 .home-links .text-btn .icon{width:19px;height:19px}
 .home-links .n{font-variant-numeric:lining-nums tabular-nums}
 .home-links:empty{display:none}
+.home-askteacher{gap:7px}
+.home-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--accent);flex:none}
 
 /* v0.3 私人老师：主动找她聊的小卡（左边一道绿线，像老师在本子边上写的一句），和一直在的“有问题，问我” */
 .home-teacher{display:flex;flex-direction:column;align-items:flex-start;gap:16px;margin-top:28px;padding-top:24px;border-top:1px solid var(--rule)}
@@ -40,6 +46,7 @@
 
 @media (min-width:700px){
   .home-hello{margin-top:72px;font-size:40px}
+  .home-greet{margin-top:14px;font-size:23px}
   .home-review{margin-top:56px}
   .home-line{font-size:28px}
   .home-why{font-size:17px}
@@ -53,5 +60,6 @@
 }
 @media (max-width:420px){
   .home-hello{font-size:28px}
+  .home-greet{font-size:19px}
   .home-line{font-size:23px}
 }

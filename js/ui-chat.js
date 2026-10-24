@@ -24,6 +24,8 @@
 //     systemFor({ profile, kv, curriculum, today }) -> teacherSystem(...) 的系统提示
 //     resumable(chats, { mode, cardId, now }) -> 可以接着聊的那一段的 id | ''
 //     chipsFor(mode, profile) -> [她可以直接点的一句话]
+//     problemSource(card, params) -> { problem, diagnosis, cardId, tag } | null   problem 模式用哪道题（v0.3.1）：
+//       传来的题和诊断优先，没有用卡上的；卡找不到但传来了题目（复习的样例卡），照样能问，只是不挂在卡上
 //
 // kv：'chats'（[{ id, at, updated, title, mode, cardId }] 最近 50 个）、'chat:<id>'（整段对话）、'observations'（【记录】，
 // profile.addObservations）、'probeDay'。作答写进 attempts（kind 'chat'，itemId 是卡的 id 或 'chat:<对话 id>'，带 tag）。
@@ -121,6 +123,18 @@ export function addChatEntry(chats, chat) {
   const entry = { id: chat.id, at: chat.at, updated: chat.updated || chat.at, title: chatTitle(chat), mode: chat.mode, cardId: chat.cardId || '' };
   const all = [entry, ...list];
   return { list: all.slice(0, CHATS_CAP), dropped: all.slice(CHATS_CAP).map(x => x.id) };
+}
+
+// problem 模式用哪道题。讲题最后一屏、复习“问我这道”传来刚做的那道（同坑合并时卡上存的是第一道，复习时是变式题），
+// 卡详情只有卡。卡找不到（模拟模式的样例卡不在错题本里、卡刚被删）但传来了题目：照样用传来的题和诊断，cardId 留空，
+// 作答记在这段对话上，不挂到一张不存在的卡上。题和卡都没有 -> null（说“这道题找不到了”）
+export function problemSource(card, params = {}) {
+  const p = params && params.problem && typeof params.problem === 'object' ? params.problem : null;
+  const d = params && params.diagnosis && typeof params.diagnosis === 'object' ? params.diagnosis : null;
+  if (!card && !(p && str(p.stem))) return null;
+  const problem = p || (card && card.problem) || {};
+  const diagnosis = d || (card && card.diagnosis) || {};
+  return { problem, diagnosis, cardId: card ? str(card.id) : '', tag: str((card && card.tag) || diagnosis.tag) };
 }
 
 export function resumable(chats, { mode = 'free', cardId = '', now = Date.now() } = {}) {
@@ -701,11 +715,11 @@ export function createChat(ctx) {
       let card = null;
       try { card = params.cardId && ctx.store ? await ctx.store.get('items', params.cardId) : null; } catch (e) { card = null; }
       if (token !== showToken) return;
-      if (!card) { await openChat(newChat({ mode: 'free' }), { intro: COPY.missingCard }); ensureProfile().then(() => token === showToken && render()); return; }
-      // 讲题最后一屏传来刚讲的那道题和诊断；卡详情只有卡（卡上存的是第一次掉进这个坑的那道）
-      const problem = (params.problem && typeof params.problem === 'object' ? params.problem : card.problem) || {};
-      const diagnosis = (params.diagnosis && typeof params.diagnosis === 'object' ? params.diagnosis : card.diagnosis) || {};
-      const c = newChat({ mode: 'problem', cardId: card.id, context: problemContext({ problem, diagnosis }), stem: problem.stem || '', tag: card.tag || diagnosis.tag || '' });
+      // 讲题最后一屏、复习“问我这道”传来刚做的那道题和诊断；卡详情只有卡（卡上存的是第一次掉进这个坑的那道）
+      const src = problemSource(card, params);
+      if (!src) { await openChat(newChat({ mode: 'free' }), { intro: COPY.missingCard }); ensureProfile().then(() => token === showToken && render()); return; }
+      const { problem, diagnosis } = src;
+      const c = newChat({ mode: 'problem', cardId: src.cardId, context: problemContext({ problem, diagnosis }), stem: problem.stem || '', tag: src.tag });
       c.herAnswer = str(problem.her_answer);
       await openChat(c, { intro: COPY.introProblem });
       return;

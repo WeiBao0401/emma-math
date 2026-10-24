@@ -15,6 +15,9 @@
 //   纸上题  kind text（说理、找规律）：她点“对照看”，看答案，自己点“一样 / 不一样”，记自评（self）。
 //           自评的题不单独算攻克（全是自评的那次复习，最多把卡推到第 3 档）。
 //   这题有问题  每题角上都有。点了先问一句，再记进卡的 flagged、变式题从 pool 下架，这题跳过、不计。
+//   问我这道  同一道题错了两次、看了答案、或者纸上对照“不一样”以后，题下面出“问我这道”（v0.3.1）：带着这道题、她最后
+//           的答案、正确答案和卡上的“记住”进 chat 的 problem 模式。去之前这题先收尾（还没看答案就给她看答案，
+//           算没做对），作答和复习先记下来，她问完直接回首页也不丢；从 chat 返回时这一轮原样接着，点“下一题”往下走。
 //   记录    每题离开时 store.addAttempt 一条；一张卡这一轮的题都做完，notebook.recordReview 更新卡并存回。
 //   收尾    “今天推进了 N 个坑”；攻克的卡有一个安静的完成动画（prefers-reduced-motion 时不动）。
 //   考考我  params.cardId：只练这一张卡，出 1 道没用过的远变式或近变式；第一次就对、没用提示，recordReview 记通过一次。
@@ -24,6 +27,7 @@
 //
 // 导出
 //   createPractice(ctx) -> { show(params, { from, back }), hide() }      params：{ cardId?, light?, demo? }
+//                                         back 为真、这一轮是去问我这道停下的：不重开，原样接着
 //   以下是纯函数（tests/practice.test.mjs）
 //   CAP, isWeekend(day), reviewCap(day, { light }), doneToday(attempts, day)
 //   planRound(cards, today, { max }) -> [{ cardId, kind, level }]       整张卡进队，再混排（remix(queue, keyOf)）
@@ -34,13 +38,17 @@
 //   afterSubmit(state, verdict) -> state + action：'right' | 'self' | 'unreadable' | 'hint-local' | 'hint-remote' | 'reveal'
 //   praiseLine(state, q), missLine(verdict, q), revealLines(q), wrapLines({ passed, practiced, dueTomorrow }), testLines(...)
 //   applyReview(card, results, today), flagCard(card, q, { day, at }), trapName(card, curriculum), checkpointLine(card, curriculum), demoCards(today)
+//   askMeReady(st) -> bool                 这一题该不该出“问我这道”（st 是一题的作答状态：tries、revealed、selfDiff）
+//   herAnswerText(given, q) -> string      她交的答案写成 chat 顶上能画的样子（小键盘的输入行转成公式）
+//   askMeParams(q, { cardId, given }) -> go('chat', …) 的 params：{ mode: 'problem', cardId, problem, diagnosis }
+//     ui-chat 现在要靠 cardId 从错题本里取卡（取不到就说“这道题找不到了”），problem、diagnosis 用这里传的这道
 //
 // Question = { cardId, kind: 'redo' | 'variant', level, q, options, crop, answer, answer_kind, form, unit, trap, trap_answer,
 //              remember, steps, input（keypad 的 kind）, letters, variable }
 // 依赖：notebook.js、mathcheck.js、pipeline.js（localHint）、keypad.js、ui-dom.js、kid-errors.js、mock.js（只有样例卡用）。
 // 模块顶层不碰 document。
-import { h, mathText, toast, skBars, prefersReducedMotion, dateCn } from './ui-dom.js';
-import { createAnswer, DEFAULT_LETTERS } from './keypad.js';
+import { h, icon, mathText, toast, skBars, prefersReducedMotion, dateCn } from './ui-dom.js';
+import { createAnswer, DEFAULT_LETTERS, toLatex } from './keypad.js';
 import { check } from './mathcheck.js';
 import { todayQueue, reviewPlan, recordReview, due, dayOf, addDays, STAGES, QUOTA, quotaFor, isWeekend, shortName } from './notebook.js';
 import { localHint } from './pipeline.js';
@@ -314,6 +322,33 @@ export function flagCard(card, q, { day = dayOf(), at = new Date().toISOString()
   return c;
 }
 
+// ---------------------------------------------------------------- 问我这道（v0.3.1）
+// 错一次有本机提示、错两次有一句老师的提示，再不懂就该当面问了：第二次错、看过答案、纸上对照“不一样”时出按钮。
+// 第一次错不出：先让她自己顺着提示改（DESIGN 4.7）
+export const askMeReady = st => !!st && ((st.tries || 0) >= 2 || !!st.revealed || !!st.selfDiff);
+
+// 小键盘的输入行（(1)/(3)、-3^2）在 chat 顶上画成公式；点选的字母、符号、纸上的题原样
+export function herAnswerText(given, q = {}) {
+  if (given === null || given === undefined || typeof given === 'object') return '';
+  const g = str(given);
+  if (!g) return '';
+  const kind = q.input || inputKind(q);
+  if (kind === 'choice' || kind === 'compare' || kind === 'text') return g;
+  return `\\(${toLatex(g)}\\)`;
+}
+
+// 进 chat problem 模式要的东西：这道题（复习时的题面，变式题就是变式题）、她最后交的答案、正确答案、卡上的“记住”
+export function askMeParams(q, { cardId = '', given = '' } = {}) {
+  const opts = (q.options || []).map(str).filter(Boolean);
+  const unit = str(q.unit);
+  const answer = str(q.answer) + (unit && !/°/.test(unit) && !str(q.answer).includes(unit) ? ' ' + unit : '');
+  const problem = { stem: str(q.q), her_answer: herAnswerText(given, q), type: '' };
+  if (opts.length) problem.options = opts;
+  const diagnosis = { answer };
+  if (str(q.remember)) diagnosis.remember = str(q.remember);
+  return { mode: 'problem', cardId: str(cardId || q.cardId), problem, diagnosis };
+}
+
 // ---------------------------------------------------------------- 样例卡（只在模拟模式，只在内存里）
 // 五张今天到期的卡，把每种作答都走一遍：数（乘方）、比大小、补题（乘除顺序，池子是空的）、化简（去括号）、
 // 两个答案带单位（点在直线上）、选择题和纸上说理（−a 的正负）。
@@ -365,6 +400,7 @@ export function createPractice(ctx) {
   let R = null;        // 这一轮
   let answer = null;   // 当前这题的作答控件
   let objectURL = '';
+  let paused = null;   // 点了“问我这道”的那一轮：去 chat 时不收，从 chat 返回（back）时原样接着
 
   const todayOf = () => (typeof ctx.today === 'function' ? ctx.today() : dayOf());
   const isMock = () => { try { return !!((ctx.settings && ctx.settings().mock) || (ctx.mockForced && ctx.mockForced())); } catch { return false; } };
@@ -470,7 +506,7 @@ export function createPractice(ctx) {
     const btns = [];
     if (!live.length) {
       main = '错题本里还没有题。';
-      sub = '拍一页老师批过的作业，我们从那里开始。';
+      sub = '拍一页学校老师批过的作业，我们从那里开始。';
       btns.push(h('button', { type: 'button', className: 'btn', text: '拍错题', on: { click: () => { stop(); ctx.go('capture'); } } }), homeBtnText());
     } else if (dueNow && max <= 0) {
       main = '今天的复习做完了。';
@@ -490,7 +526,7 @@ export function createPractice(ctx) {
   function startTest(my, cards, id, today) {
     const card = cards.find(c => c.id === id);
     if (!card) return paintMsg('这张卡找不到了。', '', backBtn());
-    if (card.status === 'ask' || !str(card.diagnosis && card.diagnosis.answer)) return paintMsg('这道题要先问老师。', '问完老师，再来考自己。', backBtn());
+    if (card.status === 'ask' || !str(card.diagnosis && card.diagnosis.answer)) return paintMsg('这道题要先问学校老师。', '问完学校老师，再来考自己。', backBtn());
     startRound(my, cards, today, { queue: [{ cardId: id, kind: 'variant', level: '远变式', levels: ['远变式', '近变式'] }], test: true, demo: !!card.demo });
   }
   const backBtn = () => h('button', { type: 'button', className: 'btn', text: '回去', on: { click: quit } });
@@ -601,6 +637,7 @@ export function createPractice(ctx) {
     const hints = h('ol', { className: 'pr-hints', 'aria-live': 'polite' });
     const say = h('div', { className: 'pr-say', 'aria-live': 'polite' });
     const actions = h('div', { className: 'pr-actions' });
+    const askSlot = h('div', { className: 'pr-askme', hidden: true });   // “问我这道”，到时候才出，在提示下面
     const host = h('div', { className: 'pr-answer' });
     const first = r.i === 0 && q.input !== 'text' && q.input !== 'choice' && q.input !== 'compare';
     const cp = r.test ? '' : checkpointLine(r.cards.get(it.cardId), ctx.curriculum);
@@ -613,7 +650,7 @@ export function createPractice(ctx) {
         cp ? h('p', { className: 'pr-check', text: cp }) : null,
         first ? h('p', { className: 'small pr-tip', text: '草稿纸上算，答案填在下面。' }) : null,
         note ? h('p', { className: 'small pr-note', text: note }) : null),
-      hints, host, say, actions));
+      hints, askSlot, host, say, actions));
     const ans = answer = createAnswer(host, {
       kind: q.input, options: q.options, unit: q.unit, letters: q.letters, variable: q.variable,
       onSubmit: given => submit(given),
@@ -640,7 +677,8 @@ export function createPractice(ctx) {
       const v = judge(given, q);
       st.givens.push(given);
       const s = afterSubmit(st, v);
-      Object.assign(st, { tries: s.tries, hints: s.hints, trapHit: s.trapHit });
+      Object.assign(st, { tries: s.tries, hints: s.hints, trapHit: s.trapHit, reason: v.reason || st.reason || '' });
+      offerAsk();
       say.replaceChildren();
       if (s.action === 'right') return finish({ ok: true, firstTry: s.firstTry, lines: [praiseLine(s, q)], reason: '' });
       if (s.action === 'self') return selfCheck();
@@ -683,6 +721,9 @@ export function createPractice(ctx) {
     function finish({ ok, firstTry, lines = [], reveal = false, self = false, reason = '', trapNow = false }) {
       if (st.out) return;
       st.out = { ok, firstTry: !!firstTry, self, reason, ms: Date.now() - st.t0 };
+      if (reveal) st.revealed = true;
+      if (self && !ok) st.selfDiff = true;
+      for (const li of hints.querySelectorAll('.pr-hint.wait')) li.remove();   // 还在路上的提示用不上了
       ans.lock(true);
       ans.fold(true);
       const nodes = [];
@@ -700,8 +741,26 @@ export function createPractice(ctx) {
       const last = r.i >= r.queue.length - 1;
       const nextBtn = h('button', { type: 'button', className: 'btn', text: last ? (r.test ? '看看结果' : '看看今天') : '下一题', on: { click: () => leave(r, it, q, { st }) } });
       actions.replaceChildren(nextBtn);
+      actions.after(askSlot);   // 做题时它跟在提示下面；这题收尾后挪到“下一题”下面，先看答案再决定问不问
+      offerAsk();
       nextBtn.focus({ preventScroll: true });
       if (actions.scrollIntoView) actions.scrollIntoView({ block: 'nearest', behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+    }
+
+    // 问我这道：到了时候才出，出了就一直在（第三次做对了也可以去问为什么）
+    function offerAsk() {
+      if (r !== R || st.gone || !askSlot.hidden || !askMeReady(st)) return;
+      askSlot.replaceChildren(h('button', { type: 'button', className: 'text-btn accent', on: { click: askNow } }, icon('chat'), h('span', { text: '问我这道' })));
+      askSlot.hidden = false;
+    }
+    function askNow() {
+      if (r !== R || st.gone) return;
+      const given = st.givens.length ? st.givens[st.givens.length - 1] : '';
+      // 还没看答案就去问：这题先收尾，答案留在屏上，回来点“下一题”接着走
+      if (!st.out) finish({ ok: false, firstTry: false, reveal: true, reason: st.reason || '' });
+      settle(r, it, q, { st });
+      paused = r;
+      ctx.go('chat', askMeParams(q, { cardId: it.cardId, given }));
     }
 
     function confirmFlag() {
@@ -724,10 +783,20 @@ export function createPractice(ctx) {
     }
   }
 
-  // 离开一题：记一条作答；这张卡这一轮的题都做完了就记一次复习
-  function leave(r, it, q, { st = null, skipped = false, flagged = false } = {}) {
+  // 离开一题：记下来，再出下一题
+  function leave(r, it, q, { st = null, flagged = false } = {}) {
     if (r !== R || (st && st.gone)) return;
     if (st) st.gone = true;
+    settle(r, it, q, { st, flagged });
+    present();
+  }
+
+  // 记一题：一条作答；这张卡这一轮的题都做完了就记一次复习。每题只记一次：“问我这道”去问之前先记，回来点“下一题”不再记
+  function settle(r, it, q, { st = null, flagged = false } = {}) {
+    if (st) {
+      if (st.settled) return;
+      st.settled = true;
+    }
     const out = st && st.out;
     const counted = !!(q && out && !flagged);
     if (q && st) {
@@ -748,7 +817,6 @@ export function createPractice(ctx) {
     r.left.set(it.cardId, left);
     if (left <= 0) closeCard(r, it.cardId);
     r.i += 1;
-    present();
   }
 
   function closeCard(r, id) {
@@ -797,8 +865,22 @@ export function createPractice(ctx) {
     R = null;
   }
 
+  // 从 chat 回来：屏上还是那道题（答案、“下一题”都在），焦点放回“下一题”
+  function resume() {
+    const next = stage && stage.querySelector('.pr-actions .btn');
+    if (next) next.focus({ preventScroll: true });
+  }
+
   return {
-    show(params) { show(params || {}); },
-    hide() { token++; stop(); },
+    show(params, opts) {
+      if (opts && opts.back && paused && paused === R) { paused = null; resume(); return; }
+      paused = null;
+      show(params || {});
+    },
+    hide() {
+      token++;
+      if (paused && paused === R) return;   // 去问我这道：这一轮留着，回来接着做
+      stop();
+    },
   };
 }

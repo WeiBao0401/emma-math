@@ -95,6 +95,14 @@ button.ex-line:disabled{cursor:default}
 .ex-again-h{font:500 19px/1.45 var(--serif)}
 .ex-again-later{font-size:16px;color:var(--muted)}
 
+/* 直接讲吧: once she has fixed once and picked once. Normally a quiet text button bottom right;
+   after 21:00 a big solid button at the top of the step, the first thing she sees. */
+.ex-direct{display:flex;justify-content:flex-end;margin-top:-4px}
+.ex-direct .text-btn{display:inline-flex;align-items:center;gap:4px;margin-right:-10px;font-size:16px}
+.ex-direct.big{justify-content:flex-start;margin-top:0}
+.ex-direct.big .btn{flex:1;max-width:520px}
+@media (max-width:560px){.ex-direct.big .btn{max-width:none}}
+
 /* 这题有问题: small, bottom right */
 .ex-flag-row{display:flex;justify-content:flex-end;margin-top:8px}
 .text-btn.ex-flag{font-size:14px;color:var(--faint);margin-right:-10px}

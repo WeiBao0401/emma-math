@@ -381,6 +381,7 @@ export const MOCK_CASE_LABELS = {
   ungraded: '老师还没批改的一页',
   unclear: '有两处字看不清',
   empty: '一道题也没认出来',
+  unsure: '讲题答案和程序算的对不上（拿不准）',
 };
 export const mockCaseOptions = () => RECOGNIZE_CASES.map(id => ({ id, label: MOCK_CASE_LABELS[id] || id }));
 // ai.js 认 settings.mockFail：模拟模式下每次都假装出这种错（看报错界面用）

@@ -6,15 +6,25 @@
 //   powers    −3² 当成 (−3)²（t1 第 2 题）          order     −6÷2×⅓ 先算了乘法（t1 第 5 题）
 //   brackets  −2(a−3b) 去括号变号（t2 第 1 题）       equation  去分母漏乘右边的 1（t3）
 //   geometry  点在直线上，漏了一种位置，半对（t5 第 7 题）
+//   wordproblem  横着拍的应用题：每组 7 人余 3 人、每组 8 人少 5 人，她列成 7x−3=8x+5（“余下”“少”的加减反了），
+//                解出 x=−8 又写成“共分 8 组”。答案 8，错因审题（v0.3.1：以前这页的诊断会套成乘方题）
+//
+// 另有一页“拿不准”（mockCase 'unsure'，v0.3.1）：一道计算题，模拟的讲题答案写错了（最后一步把 −9 减成了加），
+//   程序算出来对不上，pipeline 再换备用模型也一样，判成 unsure，界面进“问学校老师”，不讲。它不在 TOPICS 里：
+//   TOPICS 的每道题答案都要核对得上（tests/ai.test.mjs）。
 //
 // 导出
-//   TOPICS                                  ['powers', 'order', 'brackets', 'equation', 'geometry']
+//   TOPICS                                  ['powers', 'order', 'brackets', 'equation', 'geometry', 'wordproblem']
 //   RECOGNIZE_CASES                         看照片能模拟的页：'' 默认（练习册 t1）| 'brackets' | 'equation' | 'half' |
-//                                           'sideways' | 'ungraded' | 'unclear' | 'empty'
+//                                           'sideways' | 'ungraded' | 'unclear' | 'empty' | 'unsure'（家长区下拉框列的就是这些）
+//   UNLISTED_CASES                          []：能用但下拉框里没有名字的页（'unsure' 0.3.1 起进了下拉框）
+//   UNSURE_STEM                             'unsure' 那页打叉的那道题（测试用）
 //   topicOf(text) -> topic                  从发给 AI 的文字里认出是哪道仿真题，认不出就是 'powers'
+//                                           （“每组”“余下”是 wordproblem）
 //   mockAnswer(task, { text, images, mockCase }) -> object   每次一份新的对象，随便改
 //     task：recognize | explain | variants | solve | hint | reflect（别的任务给 {}）
-//     mockCase：settings.mockCase。看照片时选页（见上），其他任务时可以直接写题目名（'order' 等）
+//     mockCase：settings.mockCase。看照片时选页（见上），其他任务时可以直接写题目名（'order' 等）；
+//     'unsure' 时讲题（explain）一律给写错答案的那份诊断，题目是 UNSURE_STEM 时也是
 //   mockText(task, { text, images, mockCase }) -> string     要纯文字的任务（ask 的 raw）：listen 给 MOCK_TRANSCRIPT
 //   MOCK_TRANSCRIPT                         模拟的录音转写：“老师，负三的平方为什么是负九？”
 //   CHAT_CASES                              mockChat 认的场景名（settings.mockCase 写其中一个就固定用那一段）
@@ -26,7 +36,7 @@
 //     example   “举个例子”：几组对比           quiz   “出一道题考考我”：只出【练习】
 //     gotit     “懂了”：用一个小问题确认         right / wrong   她报了练习的结果（“我的答案……”，带“不对”“错”算 wrong）
 //     photo     只发了照片：先问她第一步打算怎么做    other   别的问题：先弄清她卡在哪
-//     对话里的题是别的仿真题（去括号、去分母、乘除顺序、几何）时，free、retry、quiz 用那道题的讲法和同构题
+//     对话里的题是别的仿真题（去括号、去分母、乘除顺序、几何、分组应用题）时，free、retry、quiz 用那道题的讲法和同构题
 //
 // 形状（和 bakeoff/prompts/*.md 一致，另加比拼报告“要改进的地方”第 2 条的 answer_kind）
 //   recognize  { graded, rotation, page, problems: [{ no, type, stem, options, figure, her_work, her_answer, mark,
@@ -44,8 +54,11 @@
 const L = String.raw;   // LaTeX with single backslashes, exactly what a parsed reply holds
 const copy = o => JSON.parse(JSON.stringify(o));
 
-export const TOPICS = ['powers', 'order', 'brackets', 'equation', 'geometry'];
-export const RECOGNIZE_CASES = ['', 'brackets', 'equation', 'half', 'sideways', 'ungraded', 'unclear', 'empty'];
+export const TOPICS = ['powers', 'order', 'brackets', 'equation', 'geometry', 'wordproblem'];
+export const RECOGNIZE_CASES = ['', 'brackets', 'equation', 'half', 'sideways', 'ungraded', 'unclear', 'empty', 'unsure'];
+// 能用的模拟页，但家长区下拉框还没有它的中文名（ui-parent MOCK_CASE_LABELS 加上以后挪进 RECOGNIZE_CASES，parent.test 查每页都有名字）
+export const UNLISTED_CASES = [];
+export const UNSURE_STEM = L`\((-2)^3\times\frac{1}{4}-(-3)^2=\)`;
 
 const P = (no, type, stem, her_answer, mark, extra = {}) => ({
   no, type, stem, options: [], figure: '', her_work: [], her_answer, mark, teacher_note: '', circled: '', unclear: false, ...extra,
@@ -107,6 +120,16 @@ const PAGES = {
     ],
   },
   empty: { graded: false, rotation: 0, page: '其他', problems: [] },
+  // 拿不准：第 2 题她把 (−3)² 算成 6（底数乘指数），得 −8；程序算是 −11；模拟的讲题答案写成了 7（见 SHAKY）。三个都不一样
+  unsure: {
+    graded: true, rotation: 0, page: '练习册',
+    problems: [
+      P('1', '计算', L`\((-1)^{3}+|-2|=\)`, '1', 'right'),
+      P('2', '计算', UNSURE_STEM, '-8', 'wrong', {
+        her_work: [L`\(=-8\times\frac{1}{4}-6\)`, L`\(=-2-6\)`, L`\(=-8\)`], circled: '6' }),
+      P('3', '计算', L`\(-2^2\div 4=\)`, '-1', 'right'),
+    ],
+  },
 };
 // the t1 page with her last answer smudged: the model marks what it could not read
 PAGES.unclear = copy(PAGE_T1);
@@ -205,10 +228,31 @@ const BANK = {
     remember: '只说“点在直线上”，位置就不固定：画两张图，左边一张，右边一张。',
     hints: ['题目说 C 在“直线”上，还是在“线段”上？', 'C 可以在 B 的哪一边？画两张图看看。', L`C 在 B 外面时，\(AC=10+4\)。`],
   },
+  // 7x+3=8x−5，x=8（总人数 59）。她的 7x−3=8x+5 得 x=−8：两处都反了，所以只差一个负号，她去掉负号写了 8 组
+  wordproblem: {
+    answer_kind: 'number',
+    steps: [
+      L`设共分 \(x\) 组。每组 7 人，余下 3 人，总人数是 \(7x+3\)。`,
+      L`每组 8 人，少 5 人，总人数是 \(8x-5\)。`,
+      L`总人数不变：\(7x+3=8x-5\)，解得 \(x=8\)，共分 8 组。`,
+    ],
+    wrong_step: L`\(7x-3=8x+5\)`,
+    why: L`她把“余下 3 人”当成要减去，把“少 5 人”当成要加上，两处正好反了。解出 \(x=-8\) 以后，她觉得组数不该是负的，就去掉负号写了 8 组，没有回头查方程。`,
+    explain: [
+      '设组数为 x，用两种分法各写一次总人数，再让它们相等，这个思路是对的。',
+      L`问题出在“余下”和“少”上。每组 7 人，坐满 \(7x\) 个位子还余下 3 人，人比位子多，总人数是 \(7x+3\)。`,
+      L`每组 8 人，少 5 人，是 \(8x\) 个位子还空着 5 个，人比位子少，总人数是 \(8x-5\)。`,
+      L`所以 \(7x+3=8x-5\)，\(x=8\)。检验：\(7\times 8+3=59\)，\(8\times 8-5=59\)，对上了。`,
+      L`解出 \(x=-8\) 时就该停下来：组数不能是负数，说明方程列反了，要回头查，不能只把负号去掉。`,
+    ],
+    remember: '余下是人多出来，要加上；少几人是位子没坐满，要减去。解出来先问一句：组数能是负的吗？',
+    hints: [L`“余下 3 人”时，总人数比 \(7x\) 多还是少？`, '余下的人要加上，少的人要减去。', L`总人数写成 \(7x+3\) 和 \(8x-5\)，让它们相等。`],
+  },
 };
 
 // Which mock problem the text is about. The real prompts carry the stem; any of its usual spellings counts.
 const SIGNS = [
+  ['wordproblem', /每组|余下/],   // 放最前：她的方程 7x−3=8x+5 里没有别的题的记号，但应用题的字最准
   ['brackets', /3\(2a-b\)|2a-b|a-3b/],
   ['equation', /frac\{x-1\}\{2\}|\(x-1\)\/2|2x\+1\}\{3\}|x=-6/],
   ['geometry', /AM|中点|直线 ?\\?\(?AB/],
@@ -220,6 +264,11 @@ export function topicOf(text) {
   for (const [topic, re] of SIGNS) if (re.test(t)) return topic;
   return 'powers';
 }
+// the 'unsure' page's wrong problem, however the prompt spells it (LaTeX as read, or plain after she edited it)
+const isShaky = text => {
+  const t = String(text ?? '').replace(/\s+/g, '').replace(/[−–]/g, '-');
+  return t.includes(UNSURE_STEM.replace(/\s+/g, '').replace(/=\\\)$/, '')) || /\(-2\)(?:\^3|³)×(?:1\/4|¼)-\(-3\)(?:\^2|²)/.test(t);
+};
 
 // The diagnose shape of prompts.js (hint ladder, self-explanation, twin) and variants at the four levels, each with
 // the answer her wrong idea would give (trap_answer), all worked out by hand and checked by tests/ai.test.mjs.
@@ -289,6 +338,45 @@ const MORE = {
       { level: '远变式', q: L`已知 \(\angle AOB=70^\circ\)，\(\angle BOC=30^\circ\)，求 \(\angle AOC\) 的度数。`, answer: '100°或40°', answer_kind: 'set', trap: 'OC 可以在 ∠AOB 外面，也可以在里面', trap_answer: '100°' },
     ],
   },
+  // 每组 a 个余下 r 个、每组 b 个少 s 个：组数 = (r+s)/(b−a)。她的坑（加减反了）解出来正好是负的组数，远变式问的是总数，
+  // 坑答案是只答了 x。每道都在 tests/ai.test.mjs 里按这个式子再算一遍
+  wordproblem: {
+    answer: '8', tag: 'E-answer-asked', section: '5.3', error_type: '审题', wrong_line: 1,
+    hint1: { q: L`每组 7 人，余下 3 人。总人数比 \(7x\) 多还是少？`, options: [L`多 3 人，是 \(7x+3\)`, L`少 3 人，是 \(7x-3\)`], answer: 0 },
+    hint2: '余下的人是多出来的，要加上；少的人是位子没坐满，要减去。从第二行改起，先写出两种分法的总人数，再让它们相等。',
+    self_explain: { q: '我错在：', options: ['把“余下”和“少”的加减弄反了，解出负数也没回头查', '解方程时移项算错了'], answer: 0 },
+    twin: { q: '某班学生分组活动，每组 6 人，则余下 4 人；每组 7 人，则少 3 人。这个班共分几组？', answer: '7', answer_kind: 'number', form: '', trap_answer: '-7' },
+    variants: [
+      { level: '同构', q: '同学们分组植树，每组 5 人，则余下 2 人；每组 6 人，则少 4 人。一共分了几组？', answer: '6', answer_kind: 'number',
+        trap: '“余下”要加上，“少”要减去，反过来就解出负的组数', trap_answer: '-6' },
+      { level: '近变式', q: '把一些练习本分给几个小组，每组 3 本，则余下 8 本；每组 5 本，则还差 2 本。一共有几个小组？', answer: '5', answer_kind: 'number',
+        trap: '“还差”和“少”一样，要从总数里减去', trap_answer: '-5' },
+      { level: '辨析', q: L`设共分 \(x\) 组。每组 8 人，则少 5 人。用含 \(x\) 的式子表示总人数。`, answer: '8x-5', answer_kind: 'expr',
+        trap: '少 5 人是位子没坐满，总人数比 8x 少', trap_answer: '8x+5' },
+      { level: '远变式', q: '把一些苹果分给几个小朋友，每人分 4 个，则余下 9 个；每人分 6 个，则少 3 个。一共有多少个苹果？', answer: '33', answer_kind: 'number',
+        trap: '设的是人数，问的是苹果数，解出 x 还要再算一步', trap_answer: '6' },
+    ],
+  },
+};
+
+// 'unsure' 那页的第 2 题：模拟的讲题最后一步把 −(−3)² 当成了 +9，答案写成 7（程序算是 −11）。同构题本身是对的，
+// 但主答案核对不上，pipeline 不会给她
+const SHAKY = {
+  answer: '7', answer_kind: 'number', form: '', unit: '',
+  solution: [L`先算乘方：\((-2)^3=-8\)，\((-3)^2=9\)。`, L`再算乘法：\(-8\times\frac{1}{4}=-2\)。`, L`最后算减法：\(-2-(-9)=7\)。`],
+  wrong_line: 0, wrong_step: L`\(=-8\times\frac{1}{4}-6\)`, error_type: '概念误解', tag: 'E-pow-as-mul', section: '2.3.1',
+  why: L`她把 \((-3)^2\) 算成了 \(3\times 2=6\)，把指数当成了乘数。`,
+  hint1: { q: L`\((-3)^2\) 是什么意思？`, options: [L`两个 \(-3\) 相乘`, L`\(-3\) 乘 2`], answer: 0 },
+  hint2: L`\((-3)^2=(-3)\times(-3)\)，先把它算出来，再往下算。`,
+  explain: [
+    L`第一步 \((-2)^3=-8\) 你算对了，乘 \(\frac{1}{4}\) 得 \(-2\) 也对。`,
+    L`问题在 \((-3)^2\)：它是两个 \(-3\) 相乘，等于 9，不是 6。`,
+    L`所以原式 \(=-2-(-9)=7\)。`,
+  ],
+  self_explain: { q: '我错在：', options: [L`把 \((-3)^2\) 算成了 \(3\times 2\)`, '乘法算错了'], answer: 0 },
+  remember: '乘方是几个相同的数相乘，不是底数乘指数。',
+  twin: { q: L`计算 \((-2)^2\times\frac{1}{2}-(-1)^3\)`, answer: '3', answer_kind: 'number', form: '', trap_answer: '1' },
+  doubt: '',
 };
 
 function explainOf(topic) {
@@ -304,12 +392,11 @@ function explainOf(topic) {
 // solve answers the question it was given (userSolve sends "题目：" + q), so mock checks agree like real ones
 function solveOf(text, topic) {
   const t = String(text || '').replace(/^题目：/, '').trim();
-  for (const k of TOPICS) {
-    const m = MORE[k];
-    for (const x of [m.twin, ...m.variants]) {
-      if (t && (t === x.q || t.startsWith(x.q))) return { answer: x.answer, answer_kind: x.answer_kind || 'text', form: x.form || '', unit: '', steps: ['（模拟）'], unsure: false };
-    }
+  for (const x of [...TOPICS.flatMap(k => [MORE[k].twin, ...MORE[k].variants]), SHAKY.twin]) {
+    if (t && (t === x.q || t.startsWith(x.q))) return { answer: x.answer, answer_kind: x.answer_kind || 'text', form: x.form || '', unit: '', steps: ['（模拟）'], unsure: false };
   }
+  // the 'unsure' problem: the checking model works it out right, so it disagrees with the slipped explanation
+  if (isShaky(t)) return { answer: '-11', answer_kind: 'number', form: '', unit: '', steps: ['（模拟）'], unsure: false };
   const m = MORE[topic];
   return { answer: m.answer, answer_kind: BANK[topic].answer_kind, form: '', unit: m.unit || '', steps: [...BANK[topic].steps], unsure: false };
 }
@@ -317,12 +404,13 @@ function solveOf(text, topic) {
 export function mockAnswer(task, { text = '', images = [], mockCase = '' } = {}) {
   const c = String(mockCase || '');
   if (task === 'recognize') {
-    const byTopic = { powers: '', order: '', geometry: 'half' };
+    const byTopic = { powers: '', order: '', geometry: 'half', wordproblem: 'sideways' };
     const key = c in PAGES ? c : c in byTopic ? byTopic[c] : '';
     return copy(PAGES[key]);
   }
   const topic = TOPICS.includes(c) ? c : topicOf(text);
   const b = BANK[topic];
+  if (task === 'explain' && (c === 'unsure' || isShaky(text))) return copy(SHAKY);
   if (task === 'explain') return copy(explainOf(topic));
   if (task === 'variants') return copy({ variants: MORE[topic].variants.map(v => ({ form: '', unit: '', steps: ['（模拟）'], ...v })) });
   if (task === 'solve') return copy(solveOf(text, topic));
@@ -353,6 +441,7 @@ export const CHAT_CASES = ['probe', 'problem', 'free', 'retry', 'example', 'quiz
 // the point each mock problem is about, in her words (what a 【记录】 line names)
 const POINTS = {
   powers: '乘方前面的负号', order: '乘除同级的顺序', brackets: '去括号时的符号', equation: '去分母要乘每一项', geometry: '点在直线上要分两种情况',
+  wordproblem: '“余下”和“少”怎么列式',
 };
 // the hidden lines are written as a model writes them: the marker, then one JSON object on the same line
 const hidden = (kind, obj) => `【${kind}】${JSON.stringify(obj)}`;
@@ -447,6 +536,11 @@ const RETRY = {
 拿一把尺子，A 放在 0，B 放在 10。C 离 B 有 4 cm，尺子上哪些位置离 10 正好 4 格？
 一个是 6，一个是 14。所以 AC 可能是 6，也可能是 14。
 你接着算：这两种情况下，AM 各是多少？`,
+  wordproblem: L`没关系，我换个说法。
+把每组想成一排椅子。每组 7 人，就是每排 7 把椅子，\(x\) 排一共 \(7x\) 把。
+余下 3 人：椅子都坐满了，还有 3 个人站着，人数是 \(7x+3\)。
+少 5 人：每排换成 8 把椅子，坐完还空着 5 把，人数是 \(8x-5\)。
+你来说说：每组 6 人、少 2 人的时候，总人数怎么写？`,
 };
 
 // free / retry / example / quiz for the other mock problems, from the explanation bank

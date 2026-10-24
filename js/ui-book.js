@@ -1,14 +1,16 @@
 // 错题本和一张卡的详情（C 4.3，CONTRACTS 11、12）。
 // 错题本：标题是她的本子名（kv 'bookName'，默认“攻克本”，以后她可以改名）；按坑 / 按章两种看法（记在 kv 'bookBy'）；
-// 每个坑一行：短名、三个点表示三档（●●○）、状态（在练 · 明天 / 自己改对的 / 攻克）；“问老师”单独一组，写原因；
-// 底部“待讲 N 道”入口和“在练 N · 攻克 N”。没有红色，没有分数，没有“错了几次”。
+// 每个坑一行：短名、三个点表示三档（●●○）、状态（在练 · 明天 / 自己改对的 / 攻克）；“问学校老师”单独一组，写原因；
+// 底部“明天先讲 N 道”入口和“在练 N · 攻克 N”。没有红色，没有分数，没有“错了几次”。
 // 卡详情：原题截图、题目、“这题的坑”（她补全的那句，没有就用 remember）、关键一步（她写的对照正确过程，错的那行
 // 用荧光笔）、每次复习的日期和对错、下次哪天；底部“我会了，考考我”（go practice { cardId }）和“这题有问题”。
-// 问老师的卡（status 'ask'）一律不讲：不显示正确过程、答案和要点，只说为什么要问老师（CONTRACTS 9）。
+// 问学校老师的卡（status 'ask'）一律不讲：不显示正确过程、答案和要点，只说为什么要问学校老师（CONTRACTS 9）。
+// v0.3.1 改名：拿不准、要带去问真老师的这一组，她看到的一律叫“问学校老师”（DESIGN 7.6），免得和“问我”（和我聊，
+// chat）混；程序里照旧叫 ask（status 'ask'、askTeacher、路由参数 tab: 'ask'）。待讲不写欠账数，写“明天先讲 N 道”。
 // 负责：首页 / 错题本 / 约定页 agent（ui-home.js、ui-book.js、ui-onboard.js、css/home.css、book.css、onboard.css）。
 //
 // 导出
-//   createBook(ctx) -> { show({ tab }), hide() }     画在 #view-book；tab：'trap' | 'chapter' 换看法，'ask' 滚到问老师
+//   createBook(ctx) -> { show({ tab }), hide() }     画在 #view-book；tab：'trap' | 'chapter' 换看法，'ask' 滚到问学校老师
 //   createCard(ctx) -> { show({ id }), hide() }      画在 #view-card
 //   纯函数（node 能测，tests/ui-book.test.mjs）：
 //     relDay(day, today) -> '今天' | '明天' | '后天' | '昨天' | '前天' | '周四' | '下周二' | '上周五' | '11 月 14 日'
@@ -21,20 +23,23 @@
 //     trapLines(card) -> { main, remember }   keyStep(card) -> { mine, wrong, right, answer, unit, answerOnly }
 //     asMath(text) -> 没有公式记号的答案包成 \\( \\)，负号、字母按公式画
 //     historyRows(card) -> [{ day, passed, items: [{ name, mark: 'ok' | 'hint' | 'again' }] }]
-//     nextText(card, today)、foundText(found)、flagCard(card, { today, at }) -> card（“这题有问题”：放进问老师）
+//     nextText(card, today)、foundText(found)、flagCard(card, { today, at }) -> card（“这题有问题”：放进问学校老师）
 //     pendingList(kv) -> [{ photoId, idx, at }]     DEFAULT_BOOK_NAME、bookName(kv)
+//     pendingLine(n, today, exam) -> '明天先讲 2 道'（n 是待讲的题数；取明天的新讲名额和 n 里小的那个；没有待讲时 ''）
+//     ASK_TITLE = '问学校老师'          这一组在她面前的名字（错题本分组、卡详情、首页入口都用它）
 //
 // 用到的 ctx：store（all / get / put 'items'）、kv（peek / set）、curriculum、today()、go、back、toast。
 // 样式在 css/book.css，类名以 book- 开头。
 import { h, icon, mathText, dateCn } from './ui-dom.js';
-import { dayOf, addDays, reviewPlan, shortName } from './notebook.js';
+import { dayOf, addDays, reviewPlan, shortName, quotaFor } from './notebook.js';
 
 export const DEFAULT_BOOK_NAME = '攻克本';
+export const ASK_TITLE = '问学校老师';
 export const bookName = kv => {
   const n = kv && typeof kv.peek === 'function' ? kv.peek('bookName', '') : '';
   return typeof n === 'string' && n.trim() ? n.trim() : DEFAULT_BOOK_NAME;
 };
-// 问老师的卡里，只有“讲完还是不太懂”的可以接着问私人老师（诊断本身是可靠的）
+// 问学校老师的卡里，只有“讲完还是不太懂”的可以接着问我（诊断本身是可靠的）
 export const askConfused = card => {
   const r = card && card.askTeacher && typeof card.askTeacher === 'object' ? card.askTeacher.reason : '';
   return !!card && card.status === 'ask' && (r === 'confused' || r === 'still-lost');
@@ -43,6 +48,12 @@ export const pendingList = kv => {
   const p = kv && typeof kv.peek === 'function' ? kv.peek('pending', []) : [];
   return Array.isArray(p) ? p.filter(x => x && x.photoId != null) : [];
 };
+// 待讲的题不写欠账数（DESIGN 1 “孩子看得到的地方不放欠账数字”）：只说明天先讲几道，最多是明天的新讲名额
+// （notebook.quotaFor：上学日 2、周末 5、期中季上学日 3）。点了照样马上去讲，这句只是不让一长串题压着她。
+export function pendingLine(n, today = dayOf(), exam = null) {
+  const k = Math.min(Number(n) || 0, quotaFor(addDays(String(today).slice(0, 10), 1), { exam }).newMax);
+  return k > 0 ? `明天先讲 ${k} 道` : '';
+}
 
 // ---------------------------------------------------------------- 日期说法
 
@@ -76,7 +87,7 @@ export function cardKind(c) {
   if (c.light) return c.due ? 'light' : 'rest';
   return 'learning';
 }
-// 三个点是三档：在第几档就亮几个，攻克时三个都亮。轻卡和问老师的不画点。
+// 三个点是三档：在第几档就亮几个，攻克时三个都亮。轻卡和问学校老师的不画点。
 export function dotsOf(c) {
   const k = cardKind(c);
   if (k === 'beaten') return 3;
@@ -86,7 +97,7 @@ export function dotsOf(c) {
 export function statusText(c, today = dayOf()) {
   const k = cardKind(c);
   const when = () => (c.due && c.due <= today ? '今天' : relDay(c.due, today));
-  if (k === 'ask') return '问老师';
+  if (k === 'ask') return ASK_TITLE;
   if (k === 'beaten') return '攻克';
   if (k === 'rest') return '自己改对的';
   if (k === 'light') return `自己改对的 · ${when()}`;
@@ -109,8 +120,8 @@ export function chapterOf(card, curriculum = null) {
 
 export const ASK_REASONS = {
   unsure: '这道我算了两遍，结果不一样。',
-  'mine-right': '你写的和我算的一样，问问老师是不是批错了。',
-  'still-lost': '讲完还是不太懂，听听老师怎么讲。',
+  'mine-right': '你写的和我算的一样，问问学校老师是不是批错了。',
+  'still-lost': '讲完还是不太懂，听听学校老师怎么讲。',
   flagged: '你觉得这题有问题。',
 };
 // 别的界面写的同义 reason（接线时对齐）：ui-capture 写 'maybe-right'，ui-explain 写 'confused'
@@ -209,7 +220,7 @@ export const foundText = f => FOUND_TEXT[f] || '收进本子。';
 
 export function nextText(c, today = dayOf()) {
   const k = cardKind(c);
-  if (k === 'ask') return '这道先问老师，不排练习。';
+  if (k === 'ask') return '这道先问学校老师，不排练习。';
   if (k === 'beaten') return '攻克了。期中、期末前各回来一次。';
   if (k === 'rest') return '先休息，考前再来一道。';
   if (!c.due) return '';
@@ -222,7 +233,7 @@ export function nextText(c, today = dayOf()) {
   return `下次复习：${when}。${what}`;
 }
 
-// “这题有问题”：下架（不排练习、不计分），进问老师；原来的排程留在 askTeacher.prev，家长区以后能恢复
+// “这题有问题”：下架（不排练习、不计分），进问学校老师；原来的排程留在 askTeacher.prev，家长区以后能恢复
 export function flagCard(c, { today = dayOf(), at = new Date().toISOString() } = {}) {
   const x = structuredClone(c);
   x.flagged = [...(Array.isArray(x.flagged) ? x.flagged : []), { day: today, at, what: 'card' }];
@@ -313,17 +324,19 @@ export function createBook(ctx) {
         h('ul', { className: 'book-rows' }, g.rows.map(rowEl))));
     }
     if (v.ask.length) {
+      // 不写“N 道”：清单就在下面，数字只会像欠账（DESIGN 7.4 不写数字、不催）
       out.push(h('section', { className: 'book-group book-ask', id: 'book-ask' },
-        h('h2', { className: 'sec-h' }, h('span', { text: '问老师' }), h('span', { className: 'st', text: `${v.ask.length} 道` })),
-        h('p', { className: 'small book-ask-lead', text: '这几道我拿不准，不讲也不排练习。带去问学校老师。' }),
+        h('h2', { className: 'sec-h', text: ASK_TITLE }),
+        h('p', { className: 'small book-ask-lead', text: '这几道我先不讲，也不排练习。带去问学校老师。' }),
         h('ul', { className: 'book-rows' }, v.ask.map(r => h('li', {}, h('button', { type: 'button', className: 'book-row ask', on: { click: () => ctx.go('card', { id: r.id }) } },
           h('span', { className: 'book-name', text: r.name }),
           h('span', { className: 'book-reason', text: r.reason }),
           icon('chev', 'book-chev')))))));
     }
     const shelfCount = v.counts.learning + v.counts.light + v.counts.beaten;
+    const later = pendingLine(pending.length, todayOf(ctx), ctx.kv.peek('exam', null));
     out.push(h('footer', { className: 'book-foot' },
-      pending.length ? h('button', { type: 'button', className: 'text-btn accent book-pending', on: { click: goPending } }, h('span', { text: `待讲 ${pending.length} 道` }), icon('chev')) : h('span'),
+      later ? h('button', { type: 'button', className: 'text-btn accent book-pending', on: { click: goPending } }, h('span', { text: later }), icon('chev')) : h('span'),
       shelfCount ? h('span', { className: 'book-count', text: `在练 ${v.counts.learning} · 攻克 ${v.counts.beaten}` }) : null));
     out.push(h('p', { className: 'book-promise' }, h('button', { type: 'button', className: 'text-btn', text: '老师和你的约定', on: { click: () => ctx.go('onboard', { review: true }) } })));
     page.replaceChildren(...out);
@@ -384,9 +397,9 @@ export function createCard(ctx) {
     const ask = !!card && cardKind(card) === 'ask';
     if (card && confirming) {
       barInner.replaceChildren(
-        h('p', { className: 'book-bar-q', text: '这道题先放进“问老师”，不再排练习。家长也会看到。' }),
+        h('p', { className: 'book-bar-q', text: `这道题先放进“${ASK_TITLE}”，不再排练习。家长也会看到。` }),
         h('div', { className: 'book-bar-btns' },
-          h('button', { type: 'button', className: 'btn', text: '放进问老师', on: { click: doFlag } }),
+          h('button', { type: 'button', className: 'btn', text: '好，放进去', on: { click: doFlag } }),
           h('button', { type: 'button', className: 'text-btn', text: '算了', on: { click: () => { confirming = false; renderBar(); } } })));
     } else if (card && !ask) {
       barInner.replaceChildren(h('div', { className: 'book-bar-btns' },
@@ -394,7 +407,7 @@ export function createCard(ctx) {
         askMeBtn(),
         h('button', { type: 'button', className: 'text-btn', text: '这题有问题', on: { click: () => { confirming = true; renderBar(); } } })));
     } else if (card && askConfused(card)) {
-      // 讲完还是不太懂的题：诊断是可靠的，可以接着问老师（拿不准的、她点了“这题有问题”的不接）
+      // 讲完还是不太懂的题：诊断是可靠的，可以接着问我（拿不准的、她点了“这题有问题”的不接）
       barInner.replaceChildren(h('div', { className: 'book-bar-btns' }, askMeBtn()));
     } else {
       barInner.replaceChildren();
@@ -403,7 +416,7 @@ export function createCard(ctx) {
     document.body.classList.toggle('has-bar', !bar.hidden);
   }
 
-  // v0.3：这道题还有不明白的，问老师（chat problem 模式带上这道题和当时的诊断）
+  // v0.3：这道题还有不明白的，问我（chat problem 模式带上这道题和当时的诊断）
   function askMeBtn() {
     return h('button', { type: 'button', className: 'text-btn accent book-askme', on: { click: () => ctx.go('chat', { mode: 'problem', cardId: card.id }) } },
       icon('chat'), h('span', { text: '问我' }));
@@ -420,7 +433,7 @@ export function createCard(ctx) {
       card = next;
       confirming = false;
       render();
-      ctx.toast('放进问老师了。');
+      ctx.toast(`放进“${ASK_TITLE}”了。`);
     } catch (e) {
       console.warn('card flag:', (e && e.message) || e);
       ctx.toast('没存上，再点一次。');
@@ -450,7 +463,11 @@ export function createCard(ctx) {
       meta ? h('p', { className: 'small book-meta', text: meta }) : null,
       h('p', { className: 'book-status' }, dotsOf(card) ? dotsEl(dotsOf(card), { beaten: k === 'beaten' }) : null, h('span', { text: statusText(card, today) })),
     ];
-    if (ask) out.push(h('p', { className: 'status-line book-ask-note' }, icon('ask'), h('span', { text: `${askReason(card)}记下来，带去问学校老师。` })));
+    if (ask) {
+      // 原因里已经说了问学校老师的（批改有疑问、讲完还是不懂），不再重复一遍
+      const why = askReason(card);
+      out.push(h('p', { className: 'status-line book-ask-note' }, icon('ask'), h('span', { text: /学校老师/.test(why) ? why : `${why}记下来，带去问学校老师。` })));
+    }
 
     const shot = imageSrc(card.crop, urls) || imageSrc(card.thumb, urls);
     if (shot) out.push(h('figure', { className: 'book-shot' }, h('img', { src: shot, alt: '原题截图', decoding: 'async' })));

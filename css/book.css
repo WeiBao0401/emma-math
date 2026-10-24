@@ -39,7 +39,7 @@
   @keyframes book-lit{from{background:transparent;border-color:var(--rule-strong);transform:scale(.6)}to{transform:none}}
 }
 
-/* 问老师：一行是坑名和原因 */
+/* 问学校老师：一行是坑名和原因 */
 .book-ask{scroll-margin-top:calc(var(--top) + var(--head) + 12px)}
 .book-ask .sec-h{padding-bottom:4px}
 .book-ask-lead{margin:2px 0 10px}
@@ -108,7 +108,7 @@
 .book-other-stem{margin-top:6px;font-size:15px;line-height:1.5}
 .book-gone{margin-top:24px}
 
-/* 底部操作条；问“放进问老师吗”时条会高一点，正文底下多留一些 */
+/* 底部操作条；问“放进问学校老师吗”时条会高一点，正文底下多留一些 */
 .with-bar .page.book-card{padding-bottom:calc(var(--bar) + 96px)}
 .book-bar-btns{display:flex;flex-wrap:wrap;align-items:center;gap:8px 24px}
 .book-bar-btns .btn{min-width:200px}

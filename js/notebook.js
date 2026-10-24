@@ -27,7 +27,7 @@
 //   mergeInto(card, { problem, crop, thumb, photoId, source, found, today, at, extra }) -> card
 //       同坑合并：新题挂到 originals，卡回第 1 档、明天到期、streak 清零（攻克了的重新在练）。新题要讲解才弄懂的
 //       （found 不是 'self'），轻卡变正常卡。
-//   lightCard(args) -> card      自己改对的轻卡（newCard 的参数，另加 found，默认 'self'）：第 2 天 1 道近变式，
+//   lightCard(args) -> card      自己改对的轻卡（newCard 的参数，另加 found，默认 'self'）：第 2 天 1 道同构题（没有就近变式），
 //       做对就休息（due ''，restOn），考前 wake() 叫回来；没做对就变正常卡，回第 1 档。
 //   selfFixes(cards, tag, today) -> n            这个坑最近 7 天（含今天）自己改对了几次（卡本身 + originals）
 //   promoteLight(cards, tag, today) -> cards     满 3 次：这个坑的轻卡升成正常卡（checkpoint: true，第 1 档，明天）。
@@ -69,8 +69,9 @@ export function newCard({ id, problem, diagnosis = {}, photoId = '', crop = '', 
   };
 }
 
-// 轻卡（自己改对的）只要 1 道近变式
-export const LIGHT_PLAN = [{ kind: 'variant', level: '近变式' }];
+// 轻卡（自己改对的）第 2 天只要 1 道：先用讲题时核对过、当天没做的同构题（ui-explain 放进了卡的池子，C 4.4，不再花钱出题），
+// 没有就退回近变式（v0.3.1）。levels 交给 ui-practice.pickVariant 按顺序找
+export const LIGHT_PLAN = [{ kind: 'variant', level: '同构', levels: ['同构', '近变式'] }];
 
 export function reviewPlan(card) {
   if (card && card.light) return LIGHT_PLAN.map(p => ({ ...p }));
