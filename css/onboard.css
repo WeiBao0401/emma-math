@@ -1,0 +1,21 @@
+/* 约定页（ui-onboard.js）。负责：首页 / 错题本 / 约定页 agent。类名以 onboard- 开头。
+   和英语老师的约定页同样的样子：一列编号，每条第一句是墨色，后面的话是灰色；最下面一个大按钮。 */
+.onboard{min-height:100vh;min-height:100dvh;padding:calc(var(--top) + 48px) var(--gutter) calc(var(--bottom) + 48px);display:flex;flex-direction:column}
+.onboard-kicker{font:600 15px/1.2 var(--serif);color:var(--muted)}
+.onboard-title{margin-top:10px;font-size:32px}
+.onboard-list{display:grid;gap:22px;margin-top:32px;counter-reset:none}
+.onboard-list li{display:grid;grid-template-columns:30px minmax(0,1fr);align-items:baseline;padding-top:18px;border-top:1px solid var(--rule)}
+.onboard-num{font:600 17px/1 var(--serif);color:var(--accent);font-variant-numeric:lining-nums}
+.onboard-head{font:500 19px/1.5 var(--serif);color:var(--ink);text-wrap:pretty}
+.onboard-more{margin-top:4px;font-size:16px;line-height:1.7;color:var(--muted);text-wrap:pretty}
+.onboard-go{margin-top:40px;display:flex}
+.onboard-btn{width:100%}
+@media (min-width:700px){
+  .onboard{padding-top:calc(var(--top) + 72px)}
+  .onboard-title{font-size:36px}
+  .onboard-head{font-size:20px}
+  .onboard-more{font-size:17px}
+  .onboard-go{margin-top:48px}
+  .onboard-btn{width:auto;min-width:320px}
+}
+@media (max-width:420px){.onboard-title{font-size:28px}}

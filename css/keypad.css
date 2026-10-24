@@ -1,0 +1,105 @@
+/* 小键盘和作答控件（js/keypad.js，方案 C 5.4）. Owner: 练习界面 agent. Class names start with kp-.
+   The keys are quiet tiles on the paper (a faint ink tint, no borders), like a calculator lying on the page; only
+   “好了” is solid deep green. Every key is at least 48px tall and 44px wide. In the 720px column eight keys fit across;
+   narrower than 560px (split view, a phone) the right-hand column moves to its own row so keys stay 44px wide.
+   Colours only from base.css tokens, so dark mode follows. */
+
+.kp{--key:color-mix(in srgb,var(--ink) 6%,var(--paper));--key-down:color-mix(in srgb,var(--ink) 15%,var(--paper));
+  display:flex;flex-direction:column;gap:14px}
+
+/* ---------- the screen: the formula as it will be read (big, serif), and under it her line with the caret ---------- */
+.kp-screen{padding:2px 0 8px;border-bottom:1px solid var(--rule-strong)}
+.kp-preview{min-height:2.5em;display:flex;align-items:center;font:400 30px/1.3 var(--serif);color:var(--ink);overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
+.kp-preview::-webkit-scrollbar{display:none}
+.kp-row{display:flex;align-items:center;gap:10px;min-height:40px}
+.kp-line{flex:1;min-width:0;display:flex;flex-wrap:wrap;align-items:center;min-height:40px;padding:2px 0;
+  font:400 19px/1.5 var(--mono);letter-spacing:.02em;color:var(--muted);cursor:text;outline:none;-webkit-user-select:none;user-select:none}
+/* no focus ring on the line: the blinking caret already says where typing goes */
+.kp-line:focus,.kp-line:focus-visible{outline:none}
+.kp-ch{display:inline-block;padding:0 .5px}
+.kp-ph{font:16px var(--sans);color:var(--faint)}
+.kp-caret{display:inline-block;width:2px;height:1.2em;margin:0 -1px;border-radius:1px;background:var(--accent);vertical-align:middle}
+@media (prefers-reduced-motion: no-preference){.kp-caret{animation:kp-blink 1.1s steps(1) infinite}}
+@keyframes kp-blink{50%{opacity:0}}
+.kp-math{min-width:0}
+.kp-unit{flex:none;margin-left:.4em;font:400 .8em/1 var(--serif);color:var(--muted)}
+.kp-math:empty+.kp-unit{margin-left:3em}
+.kp-locked .kp-caret{visibility:hidden}
+
+/* ---------- the keys ---------- */
+.kp-keys{display:grid;gap:8px;grid-template-columns:repeat(7,minmax(0,1fr)) minmax(0,1.5fr);
+  grid-template-areas:
+    "k7 k8 k9 kdiv klp krp ka kbs"
+    "k4 k5 k6 kmul kfrac kpow kb kmv"
+    "k1 k2 k3 kmin kplus keq kdot kok"
+    "k0 k0 kc kc kc kc kc kok"}
+.kp-k{display:flex;align-items:center;justify-content:center;min-width:44px;min-height:52px;padding:0 4px;border-radius:8px;
+  background:var(--key);color:var(--ink);font:400 25px/1 "Times New Roman","Songti SC",var(--serif);font-variant-numeric:lining-nums;
+  touch-action:manipulation;-webkit-user-select:none;user-select:none;transition:background-color .12s var(--ease),transform .12s var(--ease)}
+.kp-k:active:not(:disabled){background:var(--key-down);transform:scale(.97)}
+.kp-k:disabled{opacity:.4;cursor:default}
+.kp-k:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.kp-word{font:500 16px/1.1 var(--sans);letter-spacing:.02em}
+.kp-letter{font:italic 400 25px/1 "Times New Roman","Songti SC",var(--serif)}
+.kp-fn{font:400 22px/1 var(--sans);color:var(--muted)}
+.kp-ok{background:var(--btn-bg);color:var(--btn-ink);font:600 18px/1 var(--sans)}
+.kp-ok:active:not(:disabled){background:var(--btn-bg);transform:scale(.97)}
+.kp-blank{display:block}
+.kp-c,.kp-mv{display:flex;gap:inherit;min-width:0}
+.kp-c .kp-k,.kp-mv .kp-k{flex:1 1 0}
+
+/* the question is done: keys go away, her answer stays on the screen */
+.kp-folded .kp-keys{display:none}
+.kp-folded .kp-screen{border-bottom-color:var(--rule)}
+.kp-folded .kp-row{display:none}
+.kp-text.kp-folded{display:none}
+
+/* ---------- 选择题：big option buttons, two by two on an iPad ---------- */
+.kp-opts{display:grid;grid-template-columns:1fr;gap:12px}
+@media (min-width:600px){.kp-opts{grid-template-columns:1fr 1fr;gap:14px}}
+.kp-opt{display:flex;align-items:baseline;gap:14px;min-height:64px;padding:14px 18px;text-align:left;
+  border:1px solid var(--rule-strong);border-radius:12px;background:var(--paper);color:var(--ink);font:400 19px/1.45 var(--sans);
+  touch-action:manipulation;transition:background-color .15s var(--ease),border-color .15s var(--ease)}
+.kp-opt-l{flex:none;font:600 18px/1.45 var(--serif);color:var(--accent)}
+.kp-opt-t{flex:1;min-width:0;overflow-wrap:anywhere}
+.kp-opt:active:not(:disabled){background:var(--tag-bg)}
+.kp-opt.picked{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
+.kp-opt:disabled{cursor:default}
+.kp-opt:disabled:not(.picked){opacity:.55}
+.kp-opt:focus-visible,.kp-cmp:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ---------- 比大小：three big signs ---------- */
+.kp-cmps{display:flex;gap:16px}
+.kp-cmp{flex:1 1 0;max-width:150px;min-height:76px;border:1px solid var(--rule-strong);border-radius:12px;background:var(--paper);
+  color:var(--ink);font:400 38px/1 var(--serif);touch-action:manipulation;transition:background-color .15s var(--ease)}
+.kp-cmp:active:not(:disabled){background:var(--tag-bg)}
+.kp-cmp.picked{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
+.kp-cmp:disabled{cursor:default}
+.kp-cmp:disabled:not(.picked){opacity:.55}
+
+/* ---------- 纸上写的题 ---------- */
+.kp-text{align-items:flex-start;gap:10px}
+.kp-paper{min-width:220px}
+
+/* ---------- iPad: a little taller ---------- */
+@media (min-width:700px){
+  .kp-k{min-height:56px}
+  .kp-preview{font-size:32px}
+}
+/* narrow: the right-hand column (⌫ ← → 好了) becomes the bottom row */
+@media (max-width:560px){
+  .kp-keys{gap:6px;grid-template-columns:repeat(7,minmax(0,1fr));
+    grid-template-areas:
+      "k7 k8 k9 kdiv klp krp ka"
+      "k4 k5 k6 kmul kfrac kpow kb"
+      "k1 k2 k3 kmin kplus keq kdot"
+      "k0 k0 kc kc kc kc kc"
+      "kmv kmv kbs kbs kok kok kok"}
+  .kp-k{min-height:48px;font-size:22px;padding:0 2px}
+  .kp-word{font-size:14px}
+  .kp-preview{font-size:26px}
+  .kp-k.kp-ok{font-size:17px}
+  .kp-k.kp-fn{font-size:20px}
+}
+@media (max-width:420px){.kp-keys{gap:5px}}
+@media (prefers-reduced-motion: reduce){.kp-k,.kp-opt,.kp-cmp{transition:none}}

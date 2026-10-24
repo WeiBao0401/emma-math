@@ -1,0 +1,123 @@
+/* 家长区（ui-parent.js）。负责：家长区 UI agent。照英语老师 App 的 parent.css 和 ui-me 的分组列表：细线分行、右边一个值、
+   点一行原地展开。类名都以 parent- 开头，只在 #view-parent 里用，不和别的界面打架。
+   门：4 位数字码，72px 的圆键；设置页：一栏 720px（base.css 的 --col），按钮和可点的行不小于 44px。 */
+
+#view-parent .parent-main[hidden],#view-parent .parent-gate[hidden]{display:none}
+#view-parent .lead{margin-top:8px}
+.parent-mockline{margin-top:12px;color:var(--ink)}
+.parent-lock{margin-right:-10px;color:var(--accent)}
+.parent-lock .icon{width:18px;height:18px}
+
+/* ---------- 门：4 位数字码 ---------- */
+.parent-gate-inner{display:flex;flex-direction:column;align-items:center;text-align:center}
+.parent-gate-inner .page-title{align-self:flex-start;margin-top:8px}
+.parent-gate-title{margin-top:40px;font:400 24px/1.35 var(--serif);color:var(--ink)}
+.parent-gate-inner>.small{margin-top:8px;max-width:30em}
+.parent-dots{display:flex;gap:20px;justify-content:center;margin:32px 0 6px}
+.parent-dot{width:14px;height:14px;border-radius:50%;border:1.5px solid var(--ink);transition:background-color .15s var(--ease)}
+.parent-dot.on{background:var(--ink)}
+.parent-msg{min-height:22px;margin-top:6px}
+.parent-keypad{display:grid;grid-template-columns:repeat(3,72px);gap:16px 32px;justify-content:center;margin-top:18px}
+.parent-key{width:72px;height:72px;display:grid;place-items:center;border:1px solid var(--rule-strong);border-radius:50%;background:transparent;
+  color:var(--ink);font:400 28px/1 var(--serif);font-variant-numeric:tabular-nums;transition:background-color .15s var(--ease)}
+.parent-key:active{background:var(--tag-bg)}
+.parent-key:disabled{opacity:.35}
+.parent-key.fn{border-color:transparent;font:15px var(--sans);color:var(--muted)}
+.parent-key.fn .icon{width:24px;height:24px}
+.parent-gate-inner.waiting .parent-dots{opacity:.4}
+.parent-gate-wipe{width:100%;margin-top:28px;max-width:32em;text-align:left}
+.parent-gate-wipe .btn-row{justify-content:flex-start}
+@media (prefers-reduced-motion: no-preference){
+  .parent-dots.shake{animation:parent-shake .36s var(--ease)}
+  @keyframes parent-shake{0%,100%{transform:none}20%{transform:translateX(-8px)}40%{transform:translateX(7px)}60%{transform:translateX(-5px)}80%{transform:translateX(3px)}}
+}
+@media (max-width:360px){.parent-keypad{grid-template-columns:repeat(3,64px);gap:12px 24px}.parent-key{width:64px;height:64px}}
+
+/* ---------- 一组、一行 ---------- */
+.parent-group{margin-top:36px}
+.parent-group>.sec-h{padding-bottom:10px}
+.parent-rows>.parent-row{border-top:1px solid var(--rule)}
+.parent-rows>.parent-row:last-child{border-bottom:1px solid var(--rule)}
+.parent-row-head{display:flex;align-items:center;gap:12px;width:100%;min-height:var(--row);padding:10px 0;text-align:left;color:var(--ink)}
+button.parent-row-head:active{background:var(--tag-bg)}
+.parent-row-head .k{flex:1;min-width:0}
+.parent-row-head .k b{display:block;font:400 17px/1.35 var(--sans)}
+.parent-row-head .k span{display:block;margin-top:2px;font-size:14px;line-height:1.45;color:var(--muted)}
+.parent-row-head .v{flex:none;font-size:15px;color:var(--muted);white-space:nowrap;max-width:46%;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
+.parent-row-head .text-btn{flex:none;margin:0 -10px 0 0}
+.parent-row .chev{width:16px;height:16px;color:var(--muted);margin-right:-2px;transition:transform .2s var(--ease)}
+.parent-row.open .parent-row-head .chev{transform:rotate(90deg)}
+.parent-panel{padding:0 0 20px}
+.parent-panel>*+*{margin-top:12px}
+.parent-panel .btn-row{margin-top:14px}
+.parent-after{padding:0 0 16px}
+.parent-after .result{margin-top:0}
+.parent-foot{margin-top:10px}
+.parent-foot .small+.btn-row{margin-top:4px}
+.parent-money .parent-row-head .v{color:var(--ink)}
+.parent-good{color:var(--good)}
+.parent-warn{color:var(--ink)}
+.parent-danger-row .parent-row-head .k b{color:var(--danger)}
+.btn.parent-danger{background:var(--danger);color:var(--paper)}
+.parent-pinging{padding-bottom:12px}
+
+/* 开关在行上：本身 30px 高，四周放宽到 44px 以上好点 */
+#view-parent .switch{flex:none}
+#view-parent .switch::before{content:"";position:absolute;inset:-9px -6px}
+
+/* 一行里放一个下拉（模型、模拟哪一页）：iPad 上在右边，窄屏换到下一行占满 */
+.parent-model .parent-row-head{flex-wrap:wrap}
+.parent-model .parent-row-head .k{flex:1 1 240px}
+.parent-model .parent-row-head .select{flex:0 1 260px;min-width:0;font-size:15px}
+@media (max-width:560px){.parent-model .parent-row-head .select{flex-basis:100%}}
+.field.mono{font-family:var(--mono);font-size:15px}
+
+/* ---------- 每天上限：加减 ---------- */
+.parent-stepper{display:flex;align-items:center;gap:20px}
+.parent-step{flex:none;width:48px;height:48px;display:grid;place-items:center;border:1px solid var(--rule-strong);border-radius:50%;color:var(--ink)}
+.parent-step:active{background:var(--tag-bg)}
+.parent-step .icon{width:20px;height:20px}
+.parent-step-n{min-width:6em;text-align:center;font:400 22px/1 var(--serif);font-variant-numeric:lining-nums tabular-nums}
+
+/* ---------- 考试：日期、按章选节 ---------- */
+.parent-label{display:block;margin-top:18px;font:600 13px/1.3 var(--sans);color:var(--muted)}
+.parent-panel .parent-label+*{margin-top:2px}
+.parent-picked{color:var(--ink)}
+.parent-quick{margin-top:2px}
+.parent-ch{padding-top:10px}
+.parent-ch+.parent-ch{border-top:1px solid var(--rule)}
+.parent-ch-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.parent-ch-title{font:600 15px/1.4 var(--serif);color:var(--ink)}
+.parent-ch-head .text-btn{flex:none;margin:0 -10px 0 0;font-size:14px}
+.parent-pills{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;padding-bottom:12px}
+.parent-pill{min-height:44px;min-width:56px;padding:0 14px;border:1px solid var(--rule-strong);border-radius:999px;background:transparent;color:var(--ink);
+  font:15px var(--sans);font-variant-numeric:tabular-nums;transition:background-color .15s var(--ease),color .15s var(--ease)}
+.parent-pill[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+
+/* ---------- 问老师、“这题有问题”：一题一条 ---------- */
+.parent-list{display:grid}
+.parent-item{display:grid;grid-template-columns:minmax(0,1fr);gap:14px;padding:14px 0;border-top:1px solid var(--rule)}
+.parent-item:first-child{border-top:0;padding-top:4px}
+.parent-item.has-thumb{grid-template-columns:96px minmax(0,1fr)}
+.parent-item img{display:block;width:96px;height:auto;max-height:128px;object-fit:contain;object-position:top left;border:1px solid var(--rule);border-radius:4px;background:#fff}
+.parent-item-body{min-width:0}
+.parent-item-body>*+*{margin-top:4px}
+.parent-q{font:400 17px/1.55 var(--serif);color:var(--ink);overflow-wrap:anywhere}
+.parent-meta{color:var(--faint)}
+@media (max-width:420px){.parent-item.has-thumb{grid-template-columns:72px minmax(0,1fr)}.parent-item img{width:72px}}
+
+/* ---------- 最近的 AI 调用：一张小表，窄屏横着滑，不撑开页面 ---------- */
+.parent-calls-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 calc(-1 * var(--gutter));padding:0 var(--gutter)}
+.parent-calls{width:100%;min-width:560px;border-collapse:collapse;font-size:13.5px;line-height:1.4}
+.parent-calls th{padding:6px 10px 6px 0;text-align:left;font:600 12px/1.3 var(--sans);letter-spacing:.04em;color:var(--muted);border-bottom:1px solid var(--rule-strong);white-space:nowrap}
+.parent-calls td{padding:7px 10px 7px 0;border-bottom:1px solid var(--rule);white-space:nowrap;vertical-align:top}
+.parent-calls td.mono{font-family:var(--mono);font-size:12.5px}
+.parent-calls tr.bad td{color:var(--danger)}
+.parent-calls tr.bad td:nth-child(5){font-weight:600}
+.parent-calls tr.parent-call-detail td{white-space:normal;padding-top:0;color:var(--muted);font-size:13px}
+.parent-calls tr.bad:has(+ .parent-call-detail) td{border-bottom:0}
+
+/* ---------- 删除确认、页尾 ---------- */
+.parent-wipe-q{font:400 20px/1.4 var(--serif);color:var(--danger)}
+.parent-about{margin-top:48px}
+.parent-version{margin-top:16px}

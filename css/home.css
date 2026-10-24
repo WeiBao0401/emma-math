@@ -1,0 +1,49 @@
+/* 首页（ui-home.js）。负责：首页 / 错题本 / 约定页 agent。类名以 home- 开头；颜色、字、按钮用 base.css 的 token 和控件，
+   这里不重新定义。版式照英语老师的首页：书眉一行，大号衬线招呼，一句“今天要复习几道”，一个大按钮，底部一行细线隔开的文字入口。
+   base.css 里占位首页的 .screen、.home-main、.home-title、.home-lede、.home .snap 不用。 */
+.home-page{min-height:100vh;min-height:100dvh;padding:var(--top) var(--gutter) calc(var(--bottom) + 20px);display:flex;flex-direction:column}
+.home-head{border-bottom:0}
+.home-head-end{display:flex;align-items:center;gap:14px}
+.home-mock{background:var(--marker);color:var(--marker-ink)}
+.home-parent{margin-right:-10px;color:var(--ink);font-size:16px}
+.home-body{flex:1;display:flex;flex-direction:column;padding-top:8px}
+
+.home-hello{margin-top:40px;font:600 32px/1.22 var(--serif);letter-spacing:-.01em;text-wrap:pretty}
+
+.home-review{display:flex;flex-direction:column;margin-top:40px}
+.home-line{font-size:26px;max-width:24em}
+.home-why{margin-top:12px;font-size:16px;line-height:1.6;color:var(--muted);text-wrap:pretty;max-width:34em}
+.home-actions{display:flex;flex-direction:column;align-items:stretch;margin-top:32px}
+.home-actions .btn-big{width:100%;justify-content:center}
+.home-review .sk-bars{max-width:420px}
+
+/* 有复习时，拍错题是第二个按钮：浅底，左对齐，下面一行小字 */
+.home-snap{display:flex;flex-direction:column;align-items:flex-start;gap:8px;margin-top:28px;padding-top:24px;border-top:1px solid var(--rule)}
+.home-snap .btn{min-height:52px;padding:0 22px 0 18px}
+.home-note{margin-top:20px}
+
+/* 底部一行：待讲 N 道 · 错题本 · 问老师 N 道 */
+.home-links{display:flex;flex-wrap:wrap;align-items:center;gap:4px 28px;margin-top:40px;padding-top:10px;border-top:1px solid var(--rule)}
+.home-links .text-btn{margin:0;padding:0 4px;min-height:48px;font-size:16px;color:var(--ink)}
+.home-links .text-btn.accent{color:var(--accent);font-weight:600}
+.home-links .text-btn .icon{width:19px;height:19px}
+.home-links .n{font-variant-numeric:lining-nums tabular-nums}
+.home-links:empty{display:none}
+
+@media (min-width:700px){
+  .home-hello{margin-top:72px;font-size:40px}
+  .home-review{margin-top:56px}
+  .home-line{font-size:28px}
+  .home-why{font-size:17px}
+  .home-actions{margin-top:40px}
+  .home-links .text-btn{font-size:17px}
+}
+/* iPad 横屏：内容不贴顶也不散到底，主按钮不铺满一整行 */
+@media (min-width:900px) and (orientation:landscape){
+  .home-actions{align-items:flex-start}
+  .home-actions .btn-big{width:auto;min-width:320px}
+}
+@media (max-width:420px){
+  .home-hello{font-size:28px}
+  .home-line{font-size:23px}
+}

@@ -1,0 +1,115 @@
+/* 错题本和卡详情（ui-book.js）。负责：首页 / 错题本 / 约定页 agent。类名以 book- 开头。
+   细线分行，不用卡片和阴影；三个点表示三档，攻克时三个点换成强调色；没有红色，没有分数。 */
+
+/* ---------- 错题本 ---------- */
+.book-head{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:8px 20px}
+.book-seg{display:flex;align-items:center;gap:2px;margin-bottom:-6px}
+.book-seg-btn{margin:0;padding:0 8px;font-size:16px}
+.book-seg-btn.on{color:var(--ink);font-weight:600}
+.book-seg-sep{color:var(--rule-strong);opacity:.5;font-size:14px}
+.book-loading{margin-top:28px}
+
+.book-empty{margin-top:28px}
+.book-empty .lead{margin-top:10px;max-width:30em}
+
+.book-group{margin-top:28px}
+.book-ch{padding-bottom:4px;border-bottom:1px solid var(--rule)}
+.book-rows{border-top:1px solid var(--rule)}
+.book-ch+.book-rows{border-top:0}
+.book-rows li{border-bottom:1px solid var(--rule)}
+
+.book-row{width:100%;display:grid;grid-template-columns:minmax(0,1fr) 44px minmax(7.5em,auto) 18px;align-items:center;gap:0 14px;min-height:var(--row);padding:10px 0;text-align:left;color:var(--ink)}
+.book-row:active{background:color-mix(in srgb,var(--ink) 4%,transparent)}
+.book-name{font:500 17px/1.35 var(--serif);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.book-state{font-size:14px;line-height:1.3;color:var(--muted);white-space:nowrap;text-align:right;font-variant-numeric:lining-nums tabular-nums}
+.book-row.beaten .book-state{color:var(--accent)}
+.book-row.light .book-name,.book-row.rest .book-name{font-weight:400}
+.book-chev{width:16px;height:16px;color:var(--faint)}
+
+/* 三个点：在第几档亮几个；攻克时三个都换成强调色 */
+.book-dots{display:inline-flex;align-items:center;gap:5px}
+.book-dots i{display:block;width:8px;height:8px;border-radius:50%;border:1.25px solid var(--rule-strong);opacity:.75}
+.book-dots i.on{background:var(--ink);border-color:var(--ink);opacity:1}
+.book-dots.beaten i{background:var(--accent);border-color:var(--accent);opacity:1}
+.book-dots.none{width:1px}
+@media (prefers-reduced-motion: no-preference){
+  .book-dots.just i{animation:book-lit .9s var(--ease) both}
+  .book-dots.just i:nth-child(2){animation-delay:.18s}
+  .book-dots.just i:nth-child(3){animation-delay:.36s}
+  @keyframes book-lit{from{background:transparent;border-color:var(--rule-strong);transform:scale(.6)}to{transform:none}}
+}
+
+/* 问老师：一行是坑名和原因 */
+.book-ask{scroll-margin-top:calc(var(--top) + var(--head) + 12px)}
+.book-ask .sec-h{padding-bottom:4px}
+.book-ask-lead{margin:2px 0 10px}
+.book-row.ask{grid-template-columns:minmax(0,12em) minmax(0,1fr) 18px}
+.book-reason{font-size:14px;line-height:1.45;color:var(--muted);min-width:0}
+
+.book-foot{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:4px 20px;margin-top:20px;min-height:48px}
+.book-pending{margin:0 0 0 -10px;font-size:16px;font-weight:600}
+.book-pending .icon{width:16px;height:16px}
+.book-count{font-size:15px;color:var(--muted);font-variant-numeric:lining-nums tabular-nums}
+.book-promise{margin-top:28px}
+.book-promise .text-btn{font-size:14px}
+
+/* 手机宽度：状态挪到坑名下面 */
+@media (max-width:520px){
+  .book-row{grid-template-columns:minmax(0,1fr) 44px 18px;grid-template-areas:"name dots chev" "state state chev";row-gap:2px}
+  .book-name{grid-area:name}
+  .book-row>.book-dots{grid-area:dots}
+  .book-state{grid-area:state;text-align:left}
+  .book-chev{grid-area:chev}
+  .book-row.ask{grid-template-columns:minmax(0,1fr) 18px;grid-template-areas:"name chev" "reason chev"}
+  .book-row.ask .book-reason{grid-area:reason}
+}
+
+/* ---------- 一张卡 ---------- */
+.book-meta{margin-top:6px}
+.book-status{display:flex;align-items:center;gap:10px;margin-top:10px;font-size:15px;color:var(--muted)}
+.book-ask-note{margin-top:14px;color:var(--ink)}
+.book-ask-note .icon{color:var(--accent)}
+.book-shot{margin:22px 0 0;border:1px solid var(--rule);border-radius:4px;overflow:hidden;background:#FFFFFF}
+.book-shot img{display:block;width:100%;height:auto;max-height:420px;object-fit:contain}
+@media (prefers-color-scheme: dark){.book-shot{background:color-mix(in srgb,var(--ink) 92%,var(--paper))}}
+
+.book-sec{margin-top:30px}
+.book-sec>.sec-h{padding-bottom:8px;border-bottom:1px solid var(--rule);margin-bottom:12px}
+.book-stem{font-size:18px;line-height:1.7}
+.book-options{margin-top:8px;display:grid;gap:4px;font-size:17px}
+.book-trap{font:400 22px/1.5 var(--serif);text-wrap:pretty}
+.book-remember{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;margin-top:10px;font-size:16px;line-height:1.6;color:var(--muted)}
+
+/* 关键一步：她写的和正确的并排，错的那一行用荧光笔 */
+.book-compare{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px 28px}
+.book-col .label{margin-bottom:6px}
+.book-col.right{padding-left:20px;border-left:1px solid var(--rule)}
+.book-lines{display:grid;gap:6px;font-size:17px;line-height:1.6}
+.book-lines li{min-width:0;overflow-x:auto}
+.book-answer{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;margin-top:10px;font-size:17px}
+@media (max-width:560px){
+  .book-compare{grid-template-columns:minmax(0,1fr)}
+  .book-col.right{padding:14px 0 0;border-left:0;border-top:1px solid var(--rule)}
+}
+
+/* 复习记录 */
+.book-hist{display:grid;gap:0}
+.book-hist li{display:grid;grid-template-columns:7em minmax(0,1fr);gap:12px;padding:9px 0;border-bottom:1px solid var(--rule);font-size:15px;line-height:1.5}
+.book-hist-day{color:var(--muted);font-variant-numeric:lining-nums tabular-nums}
+.book-hist-what{display:flex;flex-wrap:wrap;gap:4px 18px}
+.book-hist-item{display:inline-flex;align-items:center;gap:5px}
+.book-ok{width:17px;height:17px;color:var(--accent)}
+.book-hist-note{color:var(--muted);font-size:14px}
+.book-next{margin-top:12px;font-size:16px;font-weight:500}
+
+/* 同一个坑的其他题 */
+.book-others{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:16px}
+.book-others img{display:block;width:100%;height:auto;max-height:140px;object-fit:contain;border:1px solid var(--rule);border-radius:4px;background:#FFFFFF}
+.book-other-stem{margin-top:6px;font-size:15px;line-height:1.5}
+.book-gone{margin-top:24px}
+
+/* 底部操作条；问“放进问老师吗”时条会高一点，正文底下多留一些 */
+.with-bar .page.book-card{padding-bottom:calc(var(--bar) + 96px)}
+.book-bar-btns{display:flex;flex-wrap:wrap;align-items:center;gap:8px 24px}
+.book-bar-btns .btn{min-width:200px}
+.book-bar-q{font-size:15px;line-height:1.5;margin-bottom:8px}

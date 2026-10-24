@@ -1,0 +1,197 @@
+/* Emma 的数学老师 · 设计 token 和共用控件。照英语老师 App（index.html 里的内联样式）抄：奶油色纸面、墨色字、细线代替卡片、
+   每屏只有一个实心按钮、荧光笔一笔只用在要她看的地方。强调色换成深绿，两个 App 在 iPad 上一眼分得开。
+   只用系统字体（New York、SF Pro、PingFang、SF Mono），不从网上拿任何东西。
+   iPad：一栏最宽 --col（720px），横屏居中。公式样式在 math.css，每个界面自己的样式在各自的 css 文件里。 */
+
+/* 中文和弯引号一律用苹方（iOS 没有中文衬线字体）；:lang(en) 去掉这一层 */
+@font-face{font-family:"zh";src:local("PingFangSC-Light");font-weight:1 349;unicode-range:U+2018-2019,U+201C-201D,U+3000-303F,U+3400-4DBF,U+4E00-9FFF,U+F900-FAFF,U+FF00-FFEF}
+@font-face{font-family:"zh";src:local("PingFangSC-Regular");font-weight:350 449;unicode-range:U+2018-2019,U+201C-201D,U+3000-303F,U+3400-4DBF,U+4E00-9FFF,U+F900-FAFF,U+FF00-FFEF}
+@font-face{font-family:"zh";src:local("PingFangSC-Medium");font-weight:450 549;unicode-range:U+2018-2019,U+201C-201D,U+3000-303F,U+3400-4DBF,U+4E00-9FFF,U+F900-FAFF,U+FF00-FFEF}
+@font-face{font-family:"zh";src:local("PingFangSC-Semibold");font-weight:550 1000;unicode-range:U+2018-2019,U+201C-201D,U+3000-303F,U+3400-4DBF,U+4E00-9FFF,U+F900-FAFF,U+FF00-FFEF}
+
+:root{
+  --paper:#FBF8F1; --ink:#1E2633; --muted:#586273; --faint:#8A929E;
+  --rule:rgba(30,38,51,.10); --rule-strong:rgba(30,38,51,.55);
+  --marker:#F3D978; --marker-ink:#1E2633; --accent:#2F6B5A; --tag-bg:#DDEBE4;
+  --danger:#B4472F; --good:#2F6B5A;
+  --btn-bg:var(--accent); --btn-ink:#FFFFFF;
+  --sk:color-mix(in srgb,var(--ink) 11%,var(--paper));
+  --serif:"zh",ui-serif,"New York",Georgia,"PingFang SC",serif;
+  --sans:"zh",-apple-system,BlinkMacSystemFont,"PingFang SC",system-ui,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,monospace;
+  --gutter:24px; --hang:26px; --head:52px; --row:52px; --btn-h:48px; --btn-big:72px; --radius-btn:6px;
+  --top:env(safe-area-inset-top,0px); --bottom:env(safe-area-inset-bottom,0px);
+  --bar:calc(66px + var(--bottom));
+  --ease:cubic-bezier(.16,1,.3,1);
+  --col:720px;
+  --z-sticky:2; --z-bar:20; --z-sheet:40; --z-grain:50; --z-toast:60;
+  color-scheme:light;
+}
+:lang(en){--serif:ui-serif,"New York",Georgia,serif;--sans:-apple-system,BlinkMacSystemFont,system-ui,sans-serif}
+@media (prefers-color-scheme: dark){
+  :root{
+    --paper:#14181F; --ink:#E9ECF2; --muted:#A3ACBA; --faint:#6F7887;
+    --rule:rgba(233,236,242,.10); --rule-strong:rgba(233,236,242,.55);
+    --marker:#6B5A1C; --marker-ink:#F6EBC4; --accent:#8CC7B3; --tag-bg:#1D3129;
+    --danger:#F08A82; --good:#8CC7B3;
+    --btn-bg:color-mix(in srgb,var(--accent) 42%,var(--paper)); --btn-ink:var(--ink);
+    --sk:color-mix(in srgb,var(--ink) 12%,var(--paper));
+    color-scheme:dark;
+  }
+}
+/* 手机宽度（家长偶尔用手机看）：两边留 16px */
+@media (max-width:420px){:root{--gutter:16px}}
+
+*{box-sizing:border-box;margin:0}
+[hidden]{display:none!important}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%;background:var(--paper)}
+body{background:var(--paper);color:var(--ink);font:17px/1.6 var(--sans);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;-webkit-tap-highlight-color:transparent;min-height:100vh;min-height:100dvh;overflow-x:hidden}
+/* 纸纹：最上面固定一层，哪儿都看不出接缝 */
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:var(--z-grain);opacity:.035;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>")}
+button,input,textarea,select{font:inherit;color:inherit}
+button{cursor:pointer;-webkit-user-select:none;user-select:none;touch-action:manipulation;background:none;border:0;padding:0}
+button:disabled{cursor:default}
+a{color:var(--accent)}
+ol,ul{list-style:none;padding:0}
+mark{background:none;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+.visually-hidden{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0;padding:0;margin:-1px}
+main#main{max-width:var(--col);margin:0 auto}
+.boot-msg{padding:calc(var(--top) + 80px) var(--gutter);color:var(--muted)}
+
+/* ---------- 字的角色 ---------- */
+.page-title{font:600 28px/1.15 var(--serif);letter-spacing:-.015em}
+.lede{font:300 28px/1.45 var(--serif);color:var(--ink);text-wrap:pretty}
+.lede .n{font-weight:600;font-variant-numeric:lining-nums tabular-nums}
+.sec-h{display:flex;align-items:baseline;gap:12px;font:600 15px/1.2 var(--serif);letter-spacing:.01em;color:var(--muted)}
+.sec-h .st{margin-left:auto;font:400 14px var(--sans);letter-spacing:0;color:var(--muted)}
+.serif{font-family:var(--serif)}
+.label{font:600 12px/1.3 var(--sans);letter-spacing:.06em;color:var(--muted)}
+.small{font-size:14px;line-height:1.5;color:var(--muted)}
+.small.danger,.danger{color:var(--danger)}
+.muted{color:var(--muted)}
+.lead{font:15px/1.6 var(--sans);color:var(--muted);text-wrap:pretty}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.tag{display:inline-block;font:600 12px/1 var(--sans);letter-spacing:.04em;color:var(--muted);background:var(--tag-bg);border-radius:999px;padding:4px 8px;white-space:nowrap}
+.dots::after{content:"…";display:inline-block;animation:blink 1.2s ease-in-out infinite}
+@keyframes blink{50%{opacity:.2}}
+
+/* ---------- 荧光笔一笔：只给要她看的地方（错的那一步、关键的数） ---------- */
+@property --mk-p{syntax:"<number>";inherits:false;initial-value:1}
+.marked{--mk-h:.40em;--mk-b:.14em;--mk-cap:.13em;--mk-x:.14em;color:var(--marker-ink);padding-right:var(--mk-x);margin-right:calc(-1 * var(--mk-x));
+  -webkit-box-decoration-break:clone;box-decoration-break:clone;background-color:transparent;
+  background-image:linear-gradient(to bottom right,transparent 46%,var(--marker) 54%),linear-gradient(var(--marker),var(--marker)),linear-gradient(to bottom right,var(--marker) 46%,transparent 54%);
+  background-repeat:no-repeat;
+  background-size:var(--mk-cap) var(--mk-h),calc((100% - 2 * var(--mk-cap)) * var(--mk-p) + 1px) var(--mk-h),var(--mk-cap) var(--mk-h);
+  background-position:left 0 bottom var(--mk-b),left calc(var(--mk-cap) - .5px) bottom var(--mk-b),left calc(var(--mk-cap) + (100% - var(--mk-cap)) * var(--mk-p)) bottom var(--mk-b)}
+mark.marked{background-color:transparent}
+
+/* ---------- 页眉一行、状态一行 ---------- */
+.runhead{position:relative;display:flex;align-items:center;justify-content:space-between;gap:12px;height:var(--head);border-bottom:1px solid var(--rule)}
+.runhead-title{font:600 17px/1 var(--serif);letter-spacing:-.005em;color:var(--ink);white-space:nowrap}
+.runhead-title .sub{font-weight:400;color:var(--muted)}
+.runhead-meta{display:flex;align-items:center;gap:14px;font-size:14px;line-height:1;color:var(--muted)}
+.status-line{display:flex;align-items:center;gap:8px;min-height:40px;font-size:14px;line-height:1.4;color:var(--muted)}
+.status-line .icon{width:17px;height:17px;flex:none}
+.status-line .text-btn{margin-left:auto;font-size:14px;white-space:nowrap}
+.status-line.danger{color:var(--danger)}
+
+/* ---------- 控件 ---------- */
+.icon{width:22px;height:22px;flex:none;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+.icon *{vector-effect:non-scaling-stroke}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:var(--btn-h);padding:0 22px;border:0;border-radius:var(--radius-btn);
+  background:var(--btn-bg);color:var(--btn-ink);font:600 16px var(--sans);text-decoration:none;transition:transform .2s var(--ease),background-color .2s var(--ease),color .2s var(--ease),opacity .2s var(--ease)}
+.btn:active{transform:scale(.98)}
+.btn:disabled{opacity:.4}
+.btn .icon{width:20px;height:20px}
+/* 一屏只有一个的大按钮（拍错题、开始练） */
+.btn-big{min-height:var(--btn-big);padding:0 36px 0 30px;gap:12px;font-size:20px;border-radius:calc(var(--radius-btn) + 2px)}
+.btn-big .icon{width:26px;height:26px}
+.btn.quiet{background:var(--tag-bg);color:var(--ink)}
+.text-btn{position:relative;background:none;border:0;color:var(--muted);font:15px/1.2 var(--sans);min-height:44px;min-width:44px;padding:0 10px;margin:0 -10px;
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;text-decoration:none;transition:color .2s var(--ease)}
+.text-btn.on{color:var(--ink);font-weight:600}
+.text-btn.accent{color:var(--accent)}
+.text-btn.danger{color:var(--danger)}
+.text-btn:disabled{opacity:.4}
+.text-btn .icon{width:18px;height:18px}
+.btn-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px 26px;margin-top:12px}
+.btn-row .text-btn{margin:0 -10px}
+.switch{flex:none;position:relative;width:50px;height:30px;border:0;border-radius:15px;background:var(--accent);transition:background-color .25s var(--ease)}
+.switch::after{content:"";position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:var(--paper);transform:translateX(20px);transition:transform .25s var(--ease)}
+.switch[aria-checked="false"]{background:var(--tag-bg)}
+.switch[aria-checked="false"]::after{transform:none}
+.switch:disabled{opacity:.5}
+.field{width:100%;min-height:48px;border:0;border-bottom:1px solid var(--rule-strong);border-radius:0;background:transparent;padding:0;font:17px var(--sans);color:var(--ink);outline:none;-webkit-appearance:none;appearance:none}
+.field:focus{border-bottom:2px solid var(--ink)}
+.field::placeholder{color:var(--faint)}
+.select{-webkit-appearance:none;appearance:none;width:100%;min-height:48px;border:0;border-bottom:1px solid var(--rule-strong);border-radius:0;padding:0 28px 0 0;font:16px var(--sans);
+  background:transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235B7268' stroke-width='1.75' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 2px center/18px;color:var(--ink)}
+.select:focus{outline:none;border-bottom:2px solid var(--ink)}
+/* 一个输入项：上面一行小字名字，下面输入框，再下面一行说明 */
+.fld{display:block;margin-top:20px}
+.fld-k{display:block;font:500 14px/1.3 var(--sans);color:var(--muted)}
+.fld-help{margin-top:6px}
+.key-row{display:flex;align-items:center;gap:16px}
+.key-row .field{flex:1;min-width:0;font-family:var(--mono);font-size:15px}
+.key-row .text-btn{margin:0 -10px 0 0;flex:none}
+.result{margin-top:16px;padding-left:14px;border-left:1.5px solid var(--rule-strong);font-size:15px;line-height:1.55}
+.result.good{border-left-color:var(--good)}
+.result.bad{border-left-color:var(--danger);color:var(--danger)}
+.result p+p{margin-top:4px}
+
+/* ---------- 骨架（等 AI 的时候） ---------- */
+.sk-bars{display:grid;gap:16px;padding-top:8px}
+.sk-bars i{display:block;height:11px;border-radius:3px;background:var(--sk)}
+@media (prefers-reduced-motion: no-preference){
+  .sk-bars i{animation:breathe 1.6s ease-in-out infinite alternate}
+  .sk-bars i:nth-child(2){animation-delay:.15s}.sk-bars i:nth-child(3){animation-delay:.3s}
+  @keyframes breathe{from{opacity:1}to{opacity:.5}}
+  @keyframes rise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+  .reveal>*{animation:rise .6s var(--ease) both}
+  .reveal>:nth-child(2){animation-delay:80ms}.reveal>:nth-child(3){animation-delay:160ms}.reveal>:nth-child(n+4){animation-delay:240ms}
+}
+
+/* ---------- 推进来的页面：顶栏、正文、底部操作条 ---------- */
+.navbar{position:fixed;z-index:var(--z-bar);top:0;left:0;right:0;height:calc(var(--top) + var(--head));padding-top:var(--top);background:var(--paper)}
+.navbar .inner{max-width:var(--col);height:var(--head);margin:0 auto;padding:0 var(--gutter);display:grid;grid-template-columns:1fr auto 1fr;align-items:center;position:relative}
+.navbar .inner::after{content:"";position:absolute;left:var(--gutter);right:var(--gutter);bottom:0;height:1px;background:var(--rule);opacity:0;transition:opacity .2s var(--ease)}
+.navbar.ruled .inner::after{opacity:1}
+.nav-end{justify-self:end;display:flex;align-items:center}
+/* 页面大标题滚上去以后，顶栏才出小标题和细线（app.js 加 .ruled） */
+.nav-title{font:600 17px/1 var(--serif);letter-spacing:-.005em;opacity:0;transform:translateY(4px);transition:opacity .2s var(--ease),transform .2s var(--ease);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:50vw}
+.navbar.ruled .nav-title{opacity:1;transform:none}
+.back{justify-self:start;display:inline-flex;align-items:center;gap:1px;min-height:44px;margin-left:-8px;padding-right:12px;color:var(--accent);font:400 17px/1 var(--sans)}
+.back .icon{width:22px;height:22px}
+.page{padding:calc(var(--top) + var(--head) + 16px) var(--gutter) calc(var(--bottom) + 48px)}
+.page .page-title{margin-top:8px}
+.page .page-title+.lead{margin-top:8px}
+.ebar{position:fixed;z-index:var(--z-bar);left:0;right:0;bottom:0;padding:9px 0 calc(9px + var(--bottom));background:var(--paper);border-top:1px solid var(--rule)}
+.ebar .inner{max-width:var(--col);margin:0 auto;padding:0 var(--gutter)}
+.with-bar .page{padding-bottom:calc(var(--bar) + 40px)}
+
+/* ---------- 一组设置 ---------- */
+.sgroup{margin-top:36px}
+.sgroup>.sec-h{padding-bottom:4px}
+.app-version{margin-top:48px}
+
+/* ---------- 首页（占位；界面阶段的 home.css 会接手） ---------- */
+.screen{min-height:100vh;min-height:100dvh;padding:var(--top) var(--gutter) calc(var(--bottom) + 32px);display:flex;flex-direction:column}
+.home-main{flex:1;display:flex;flex-direction:column;justify-content:center;padding-bottom:12vh}
+.home-title{font:600 40px/1.1 var(--serif);letter-spacing:-.02em}
+.home-lede{margin-top:16px;max-width:17em}
+.home .snap{margin-top:40px;align-self:flex-start}
+.runhead .parent-link{margin-right:-10px;color:var(--ink)}
+@media (max-width:420px){.home-title{font-size:32px}.lede{font-size:23px}}
+
+/* ---------- 出错页、提示 ---------- */
+.fatal{padding:calc(var(--top) + 32px) var(--gutter)}
+.fatal .small{margin-top:8px}
+.fatal .status-line{color:var(--danger)}
+.toast{position:fixed;left:50%;bottom:calc(var(--bottom) + 28px);transform:translate(-50%,12px);background:var(--ink);color:var(--paper);padding:10px 16px;border-radius:var(--radius-btn);font-size:15px;opacity:0;transition:opacity .2s var(--ease),transform .2s var(--ease);pointer-events:none;z-index:var(--z-toast);max-width:calc(100% - 48px);text-align:center;line-height:1.4}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+/* 有底部操作条的界面：body 加 .has-bar，提示浮在操作条上面 */
+body.has-bar .toast{bottom:calc(var(--bar) + 12px)}
+
+@media (prefers-reduced-motion: reduce){*,*::before,*::after{animation:none!important;transition:none!important}}

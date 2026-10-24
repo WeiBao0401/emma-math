@@ -1,0 +1,30 @@
+{
+  "name": "Emma 的数学老师",
+  "short_name": "Emma 的数学老师",
+  "description": "拍下批改过的错题，讲明白，再练一遍的私人数学老师",
+  "id": "/emma-math/",
+  "start_url": "/emma-math/",
+  "scope": "/emma-math/",
+  "display": "standalone",
+  "background_color": "#FBF8F1",
+  "theme_color": "#FBF8F1",
+  "lang": "zh-CN",
+  "icons": [
+    {
+      "src": "icon-180.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

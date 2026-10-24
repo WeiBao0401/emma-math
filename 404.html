@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Emma 的数学老师</title>
+<style>
+:root { --paper: #FBF8F1; --ink: #1E2633; --accent: #2F6B5A; }
+@media (prefers-color-scheme: dark) { :root { --paper: #14181F; --ink: #E9ECF2; --accent: #8CC7B3; } }
+body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--paper); color: var(--ink);
+  font: 17px/1.6 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; padding: 16px; text-align: center; }
+a { color: var(--accent); font-weight: 600; }
+</style>
+</head>
+<body>
+<main>
+  <p>这个地址不对，正在打开 Emma 的数学老师</p>
+  <p><a href="/emma-math/">打开 Emma 的数学老师</a></p>
+</main>
+<script>
+// /emma-math/ 下打错的地址（大小写不对、链接后面多粘了标点）都回到 App。
+location.replace('/emma-math/');
+</script>
+</body>
+</html>

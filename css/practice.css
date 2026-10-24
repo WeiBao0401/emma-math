@@ -1,0 +1,80 @@
+/* 到期复习（js/ui-practice.js）. Owner: 练习界面 agent. Class names start with pr-. The keypad is css/keypad.css.
+   One problem per screen: a thin progress line under the running head (no timer, no score), the problem in serif,
+   hints as notes in the margin (a thin green line on the left), one solid button at a time. No red anywhere: a miss is
+   a calm sentence. The finish is a few quiet lines; a beaten trap gets its three dots filled and a marker stroke
+   (still when prefers-reduced-motion). */
+
+.pr{min-height:100vh;min-height:100dvh;padding:var(--top) var(--gutter) calc(var(--bottom) + 32px);display:flex;flex-direction:column}
+.pr-head .pr-end{margin-left:-10px;color:var(--ink)}
+.pr-count{min-width:44px;text-align:right;font-size:14px;line-height:1;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+
+/* the progress line sits on the running head's rule */
+.pr-bar{height:2px;margin-top:-1px;background:var(--rule)}
+.pr-bar i{display:block;height:100%;background:var(--accent);border-radius:0 1px 1px 0;transition:width .5s var(--ease)}
+
+.pr-body{flex:1;display:flex;flex-direction:column;gap:18px;padding:24px 0 24px}
+
+/* ---------- the problem ---------- */
+.pr-q{display:flex;flex-direction:column;gap:12px}
+.pr-qtop{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px;margin:-8px 0 -6px}
+.text-btn.pr-flag{font-size:14px;margin-right:-10px}
+.pr-flagask{padding:10px 0 10px 14px;border-left:2px solid var(--rule-strong);font:16px/1.55 var(--sans);color:var(--ink)}
+.pr-flagask .btn-row{margin-top:8px}
+.pr-crop{display:block;align-self:flex-start;max-width:100%;max-height:34vh;border:1px solid var(--rule);border-radius:4px;object-fit:contain;background:#fff}
+.pr-stem{font:400 26px/1.55 var(--serif);color:var(--ink);overflow-wrap:anywhere;text-wrap:pretty}
+.pr-tip{margin-top:-4px}
+.pr-note{margin-top:-4px;color:var(--muted)}
+/* 检查点：a light card that came back three times a week gets one reminder next to the problem */
+.pr-check{border-left:2px solid var(--marker);padding:2px 0 2px 14px;font:16px/1.55 var(--sans);color:var(--ink)}
+
+/* ---------- hints and what she hears back ---------- */
+.pr-hints{display:flex;flex-direction:column;gap:10px}
+.pr-hints:empty{display:none}
+.pr-hint{border-left:2px solid var(--accent);padding:2px 0 2px 14px;font:17px/1.6 var(--sans);color:var(--ink);text-wrap:pretty;overflow-wrap:anywhere}
+.pr-hint.wait{border-left-color:var(--rule-strong);color:var(--muted)}
+/* she gave the trap answer: the same marker-yellow note as the explain screen */
+.pr-hint.trap{border-left-color:var(--marker);background:color-mix(in srgb,var(--marker) 22%,transparent);padding:8px 12px 8px 14px;border-radius:0 4px 4px 0}
+.pr-say{display:flex;flex-direction:column;gap:10px}
+.pr-say:empty{display:none}
+.pr-good{font:600 19px/1.5 var(--sans);color:var(--good)}
+.pr-soft{font:17px/1.6 var(--sans);color:var(--ink);text-wrap:pretty}
+.pr-key{display:flex;flex-direction:column;gap:4px;padding:10px 0 10px 14px;border-left:2px solid var(--good)}
+.pr-key-a{font:400 24px/1.5 var(--serif);color:var(--ink);overflow-wrap:anywhere}
+.pr-steps{list-style:decimal;padding-left:1.3em;margin-top:4px;font-size:16px;line-height:1.6;color:var(--muted)}
+.pr-actions{display:flex;flex-wrap:wrap;align-items:center;gap:12px}
+.pr-actions:empty{display:none}
+.pr-actions .btn{min-width:140px}
+.pr-wait{font:400 20px/1.5 var(--serif);color:var(--muted)}
+
+/* ---------- nothing to do, and the finish ---------- */
+.pr-empty,.pr-wrap{justify-content:center;gap:14px;padding-bottom:12vh}
+.pr-empty .lede,.pr-wrap .lede{max-width:17em}
+.pr-empty .btn-row,.pr-wrap .btn-row{margin-top:18px}
+.text-btn.pr-demo{align-self:flex-start;margin:6px 0 0 -10px;font-size:14px}
+.pr-next{margin-top:2px}
+.pr-demo-note{color:var(--faint)}
+.pr-bar.done i{transition:none}
+
+/* a beaten trap: three dots (the 错题本's three stages) fill one by one, then a marker stroke under its name */
+.pr-beats{display:flex;flex-direction:column;gap:14px;margin-top:6px;padding:18px 0;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+.pr-beat{display:flex;align-items:center;gap:16px}
+.pr-dots{flex:none;display:inline-flex;gap:6px}
+.pr-dots i{display:block;width:12px;height:12px;border-radius:50%;background:var(--accent);box-shadow:inset 0 0 0 1.5px var(--accent)}
+.pr-beat-t{font:500 20px/1.45 var(--serif);color:var(--ink)}
+@media (prefers-reduced-motion: no-preference){
+  .pr-beat.play .pr-dots i{animation:pr-fill .5s var(--ease) both}
+  .pr-beat.play .pr-dots i:nth-child(2){animation-delay:.3s}
+  .pr-beat.play .pr-dots i:nth-child(3){animation-delay:.6s}
+  .pr-beat.play .pr-mk{animation:pr-mark .9s var(--ease) 1s both}
+  @keyframes pr-fill{from{background:transparent;box-shadow:inset 0 0 0 1.5px var(--rule-strong);transform:scale(.8)}to{background:var(--accent);box-shadow:inset 0 0 0 1.5px var(--accent);transform:none}}
+  @keyframes pr-mark{from{--mk-p:0}to{--mk-p:1}}
+}
+
+@media (min-width:700px){
+  .pr-body{padding-top:30px}
+  .pr-stem{font-size:28px}
+}
+@media (max-width:420px){
+  .pr-stem{font-size:22px}
+  .pr-beat-t{font-size:18px}
+}

@@ -1,0 +1,19 @@
+.DS_Store
+# 这个仓库是公开的：Key、她的数据、作业照片、课本文件一律不进来
+.env
+*.key
+private/
+textbook*
+*-import*.json
+*-backup-*.json*
+emmamath-export*
+# 作业和试卷照片（界面要用图就用 png 或 svg）
+*.jpg
+*.jpeg
+*.JPG
+*.JPEG
+*.heic
+*.HEIC
+
+# 开发文档，含本机路径，不公开
+js/CONTRACTS.md

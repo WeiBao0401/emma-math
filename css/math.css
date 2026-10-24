@@ -1,0 +1,17 @@
+/* Formulas drawn by js/mathview.js. Serif digits and italic letters, like a textbook. */
+.m { font-family: "Times New Roman", "Songti SC", var(--serif, serif); font-size: 1.08em; white-space: nowrap; }
+.m i { font-style: italic; padding-right: .04em; }
+.m-text { font-family: var(--sans, sans-serif); font-style: normal; font-size: .92em; }
+.m-op { margin: 0 .22em; }
+.m-sign { margin-right: .04em; }
+.m-sup { font-size: .68em; vertical-align: .62em; line-height: 0; margin-left: .04em; }
+.m-sub { font-size: .68em; vertical-align: -.3em; line-height: 0; }
+.m-frac { display: inline-flex; flex-direction: column; align-items: center; vertical-align: -.62em; margin: 0 .12em; font-size: .92em; line-height: 1.12; }
+.m-num { padding: 0 .16em .04em; }
+.m-den { padding: .06em .16em 0; border-top: .07em solid currentColor; align-self: stretch; text-align: center; }
+.m-sqrt { white-space: nowrap; }
+.m-rad { border-top: .07em solid currentColor; padding: 0 .08em; }
+.m-ol { border-top: .07em solid currentColor; }
+.m-ul { border-bottom: .07em solid currentColor; }
+.m-box { border: .07em solid currentColor; padding: 0 .2em; }
+.m-display { display: block; text-align: center; margin: .5em 0; font-size: 1.12em; white-space: normal; }
