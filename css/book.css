@@ -50,6 +50,9 @@
 .book-pending{margin:0 0 0 -10px;font-size:16px;font-weight:600}
 .book-pending .icon{width:16px;height:16px}
 .book-count{font-size:15px;color:var(--muted);font-variant-numeric:lining-nums tabular-nums}
+.book-paper{margin-top:12px}
+.book-paper .text-btn{margin-left:-10px;font-size:16px;font-weight:600}
+.book-paper .icon{width:16px;height:16px}
 .book-promise{margin-top:28px}
 .book-promise .text-btn{font-size:14px}
 

@@ -1,7 +1,8 @@
 // 错题本和一张卡的详情（C 4.3，CONTRACTS 11、12）。
 // 错题本：标题是她的本子名（kv 'bookName'，默认“攻克本”，以后她可以改名）；按坑 / 按章两种看法（记在 kv 'bookBy'）；
 // 每个坑一行：短名、三个点表示三档（●●○）、状态（在练 · 明天 / 自己改对的 / 攻克）；“问学校老师”单独一组，写原因；
-// 底部“明天先讲 N 道”入口和“在练 N · 攻克 N”。没有红色，没有分数，没有“错了几次”。
+// 底部“明天先讲 N 道”入口和“在练 N · 攻克 N”；本子里有坑时再下面一行“做一份错题卷”（go paper，v0.4）。
+// 没有红色，没有分数，没有“错了几次”。
 // 卡详情：原题截图、题目、“这题的坑”（她补全的那句，没有就用 remember）、关键一步（她写的对照正确过程，错的那行
 // 用荧光笔）、每次复习的日期和对错、下次哪天；底部“我会了，考考我”（go practice { cardId }）和“这题有问题”。
 // 问学校老师的卡（status 'ask'）一律不讲：不显示正确过程、答案和要点，只说为什么要问学校老师（CONTRACTS 9）。
@@ -338,6 +339,11 @@ export function createBook(ctx) {
     out.push(h('footer', { className: 'book-foot' },
       later ? h('button', { type: 'button', className: 'text-btn accent book-pending', on: { click: goPending } }, h('span', { text: later }), icon('chev')) : h('span'),
       shelfCount ? h('span', { className: 'book-count', text: `在练 ${v.counts.learning} · 攻克 ${v.counts.beaten}` }) : null));
+    // v0.4 考前错题卷（ui-paper.js）：本子里有坑就能出一份，范围在那边选
+    if (shelfCount) {
+      out.push(h('p', { className: 'book-paper' }, h('button', { type: 'button', className: 'text-btn accent', on: { click: () => ctx.go('paper') } },
+        h('span', { text: '做一份错题卷' }), icon('chev'))));
+    }
     out.push(h('p', { className: 'book-promise' }, h('button', { type: 'button', className: 'text-btn', text: '老师和你的约定', on: { click: () => ctx.go('onboard', { review: true }) } })));
     page.replaceChildren(...out);
   }

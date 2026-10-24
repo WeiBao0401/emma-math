@@ -26,12 +26,26 @@
 //
 // 用到的 ctx：store.all('items')、store.byIndex('attempts', 'at', 今天零点起)、kv（peek）、curriculum、today()、budget.canSpend()、settings()、mockForced()、go。
 // 样式在 css/home.css，类名以 home- 开头（base.css 里占位首页的 .home-main、.home-title、.home-lede、.screen 不用）。
+//
+// v1 期中季（DESIGN 2.4、4.9，notebook.examPlan）：家长区填了考试日期时，招呼下面一行安静的提示（examPlan 的 note）：
+//   season “离期中还有 N 天。……”；paper “考前做一份错题卷吧……”，点了去错题卷（路由 PAPER_ROUTE，还没有这个路由时只是一行字）；
+//   rest “考前两天，轻松复习，早点睡。”，主按钮只推轻松版（复习上限 3 道，带 { light: true } 去 practice），不推新讲：
+//   今天或明天是考前 2 天到考完时，底部不出“明天先讲 N 道”（newTalkPaused），待讲的题照样在错题本里；
+//   after “考完了。卷子发回来，拍进来我们一起看。”。没有考试日期时什么都不显示。
+// 每次刷新首页先做一遍期中季的维护（examUpkeep，纯函数）：第一次进 season 时把范围内跨过去的卡、休息的轻卡叫醒一次
+//   （notebook.wake，kv 'examWoke' { exam, day } 记着，同一个考试日期只叫一次）；再把每张卡过一遍 notebook.compressDue
+//   （考前压缩，排程在 ui-practice 那边漏套了也能在这里补上）。变了的卡存回 items。
+//   导出：examUpkeep(cards, exam, today, woke) -> { cards, changed, woke }   newTalkPaused(exam, today) -> bool
+//   homePlan 多了 paperDone 参数，返回值多了 light（21:00 以后或考前两天）和 exam（examPlan 的结果）。
+//   kv 'examPaper' { exam, done }（错题卷那边写；没有就当不知道）：卷子没做完时考前第 2 天还推错题卷（日历 A）。
 import { h, icon, dateCn } from './ui-dom.js';
-import { dayOf, due, reviewPlan, quotaFor, shortName, LATE_HOUR } from './notebook.js';
+import { dayOf, addDays, due, reviewPlan, quotaFor, shortName, LATE_HOUR, examPlan, compressDue, wake } from './notebook.js';
+import { ROUTES } from './nav.js';
 import { kidMessage } from './kid-errors.js';
 import { relDay, pendingList, pendingLine, ASK_TITLE } from './ui-book.js';
 import { needsOnboard } from './ui-onboard.js';
 import { loadProfile, probePoint, probeLine } from './profile.js';
+import { paperState } from './paper.js';
 
 // v0.3 私人老师（CONTRACTS 17）：首页多两样东西，放在复习和拍错题下面：
 //   老师主动找她：学情档案里最需要帮的那个点分数够高、今天还没聊过（kv 'probeDay'）时，一张小卡“想和你聊 3 分钟：…”，
@@ -88,17 +102,20 @@ export function pickRound(cards, today = dayOf(), max = 6) {
   return { picked, n };
 }
 
-export function homePlan({ cards = [], attempts = null, today = dayOf(), hour = new Date().getHours(), exam = null } = {}) {
+export function homePlan({ cards = [], attempts = null, today = dayOf(), hour = new Date().getHours(), exam = null, paperDone } = {}) {
   const list = (Array.isArray(cards) ? cards : []).filter(c => c && c.id != null);
   const late = hour >= LATE_HOUR;
-  const quota = quotaFor(today, { exam, light: late });
+  const season = examPlan(list, exam, today, { paperDone });
+  // 考前两天到考完：和 21:00 以后一样只推轻松版（DESIGN 2.4）
+  const light = late || season.phase === 'rest';
+  const quota = quotaFor(today, { exam, light });
   const done = Array.isArray(attempts) ? reviewsDone(attempts, today) : doneToday(list, today);
   const left = Math.max(0, quota.reviewMax - done);
   const dueCards = due(list, today);
   const round = pickRound(list, today, left);
   const later = list.filter(c => c.status === 'learning' && isDay(c.due) && c.due > today).map(c => c.due).sort();
   return {
-    late, quota, done, left, queue: round.picked,
+    late, light, exam: season, quota, done, left, queue: round.picked,
     reviewCount: round.n, minutes: reviewMinutes(round.n),
     dueCount: dueCards.length, capped: !round.n && dueCards.length > 0,
     first: round.picked[0] || dueCards[0] || null, nextDue: later[0] || '',
@@ -113,7 +130,37 @@ const spaced = (before, word) => (/^\d/.test(word) ? `${before} ${word}` : `${be
 // 主按钮：只说大约几分钟，不说几道（道数像一笔要还的账；分钟数是她能安排的时间）
 export function reviewLabel(plan) {
   if (!plan || !plan.reviewCount) return '';
-  return plan.late ? `今晚轻松复习，约 ${plan.minutes} 分钟` : `今天复习，约 ${plan.minutes} 分钟`;
+  if (plan.late) return `今晚轻松复习，约 ${plan.minutes} 分钟`;
+  return plan.light ? `今天轻松复习，约 ${plan.minutes} 分钟` : `今天复习，约 ${plan.minutes} 分钟`;
+}
+
+// ---------------------------------------------------------------- v1 期中季
+
+// 错题卷的路由名。写成常量：路由还没接上时 run.mjs 不会把它当成坏的 go()，首页那一行也就只是字
+export const PAPER_ROUTE = 'paper';
+
+// 考前 2 天不讲新错题（DESIGN 2.4）：今天或明天落在考前 2 天到考完之间，就不说“明天先讲 N 道”
+export function newTalkPaused(exam, today = dayOf()) {
+  return [today, addDays(today, 1)].some(d => examPlan([], exam, d).phase === 'rest');
+}
+
+// 首页每次刷新先做的期中季维护。woke 是 kv 'examWoke'（{ exam, day }）：同一个考试日期只叫醒一次。
+// -> { cards（新的整张表）, changed（要存回 items 的卡）, woke（要写进 kv 'examWoke' 的值，不用写时 null） }
+export function examUpkeep(cards = [], exam = null, today = dayOf(), woke = null) {
+  const list = (Array.isArray(cards) ? cards : []).filter(c => c && typeof c === 'object');
+  const date = /^\d{4}-\d{2}-\d{2}/.test(String((exam && exam.date) || '')) ? String(exam.date).slice(0, 10) : '';
+  if (!date) return { cards: list, changed: [], woke: null };
+  let next = list;
+  let mark = null;
+  const season = examPlan(list, exam, today);
+  if (season.phase === 'season' && !(woke && woke.exam === date)) {
+    const ids = new Set(season.wake.map(String));
+    const up = new Map(wake(list.filter(c => ids.has(String(c.id))), today).map(c => [String(c.id), c]));
+    next = list.map(c => up.get(String(c.id)) || c);
+    mark = { exam: date, day: today };
+  }
+  next = next.map(c => compressDue(c, exam, today));
+  return { cards: next, changed: next.filter((c, i) => c !== list[i]), woke: mark };
 }
 
 // 今天没有可复习的题时的那句话。有复习时主按钮自己说（reviewLabel），这里给 ''
@@ -296,6 +343,17 @@ export function createHome(ctx) {
   let token = 0;
   const today = () => (typeof ctx.today === 'function' ? ctx.today() : dayOf());
   const exam = () => { try { return ctx.kv.peek('exam', null); } catch (e) { return null; } };
+  // 错题卷做完没有：错题卷那边写 kv 'examPaper' { exam, done }；没有这一行（或是上一次考试的）就当不知道
+  const paperDone = ex => {
+    try {
+      const p = ctx.kv.peek('examPaper', null);
+      if (p && ex && p.exam === ex.date && typeof p.done === 'boolean') return p.done;
+      // 错题卷只写 kv 'paper'：最近一份卷子是这次考试前 10 天内出的，就按它两半交没交完算
+      const last = ctx.kv.peek('paper', null);
+      if (!ex || !ex.date || !last || !last.made || last.made > ex.date || addDays(last.made, 10) < ex.date) return undefined;
+      return paperState(last).all;
+    } catch (e) { return undefined; }
+  };
   // 今天零点（本地）以后的作答，at 是 ISO 时间，所以按本地零点换成 ISO 再比
   async function todayAttempts() {
     try {
@@ -324,12 +382,17 @@ export function createHome(ctx) {
     date.textContent = dateLine(now);
     mockTag.hidden = !isMock();
     const capture = big => h('button', { type: 'button', className: big ? 'btn btn-big home-capture' : 'btn quiet home-capture', on: { click: () => ctx.go('capture') } }, icon('camera'), h('span', { text: '拍错题' }));
-    const plan = cards ? homePlan({ cards, attempts, today: t, hour: now.getHours(), exam: exam() }) : null;
+    const ex = exam();
+    const done = paperDone(ex);
+    const plan = cards ? homePlan({ cards, attempts, today: t, hour: now.getHours(), exam: ex, paperDone: done }) : null;
     let pick = null;
     try { pick = plan && prof ? greetingPick(prof, t, { cards, queue: plan.queue }) : null; } catch (e) { console.warn('home greeting:', (e && e.message) || e); }
+    let season = null;
+    try { season = plan ? plan.exam : examPlan([], ex, t, { paperDone: done }); } catch (e) { console.warn('home exam:', (e && e.message) || e); }
 
     const out = [h('p', { className: 'home-hello', text: greeting(now.getHours()) })];
     if (pick) out.push(h('p', { className: 'home-greet', text: pick.text }));
+    out.push(examLine(season));
     if (!plan) {
       out.push(h('div', { className: 'home-review' }, h('div', { className: 'sk-bars', 'aria-hidden': 'true' }, [70, 52].map(w => h('i', { style: `width:${w}%` })))));
     } else if (!plan.total) {
@@ -342,7 +405,7 @@ export function createHome(ctx) {
       out.push(h('div', { className: 'home-review' },
         why ? h('p', { className: 'home-why', text: why }) : null,
         h('div', { className: 'home-actions' },
-          h('button', { type: 'button', className: 'btn btn-big home-start', text: reviewLabel(plan), on: { click: () => ctx.go('practice', plan.late ? { light: true } : {}) } }))));
+          h('button', { type: 'button', className: 'btn btn-big home-start', text: reviewLabel(plan), on: { click: () => ctx.go('practice', plan.light ? { light: true } : {}) } }))));
       out.push(h('div', { className: 'home-snap' }, capture(false), h('p', { className: 'small', text: '学校老师发回批改过的作业，随时拍，先放进待讲。' })));
     } else {
       out.push(h('div', { className: 'home-review' },
@@ -351,10 +414,12 @@ export function createHome(ctx) {
     }
     if (budgetOut()) out.push(h('p', { className: 'status-line home-note' }, icon('info'), h('span', { text: kidMessage('budget-day', { where: 'photo' }) })));
     out.push(teacherEl());
-    body.replaceChildren(...out);
+    body.replaceChildren(...out.filter(Boolean));
 
-    // 底部入口不放欠账数字：待讲只说明天先讲几道（点了照样马上讲），问学校老师只带一个小圆点
-    const later = pendingLine(pendingList(ctx.kv).length, t, exam());
+    // 底部入口不放欠账数字：待讲只说明天先讲几道（点了照样马上讲），问学校老师只带一个小圆点。考前两天不推新讲
+    let paused = false;
+    try { paused = newTalkPaused(ex, t); } catch (e) { paused = false; }
+    const later = paused ? '' : pendingLine(pendingList(ctx.kv).length, t, ex);
     const ask = cards ? cards.filter(c => c && c.status === 'ask').length : 0;
     links.replaceChildren(...[
       // 字和数字包在一个 span 里：按钮是 flex，零散的字和数字之间会被 gap 撑开
@@ -363,6 +428,16 @@ export function createHome(ctx) {
       ask ? h('button', { type: 'button', className: 'text-btn home-link home-askteacher', 'aria-label': `${ASK_TITLE}，有要问的题`, on: { click: () => ctx.go('book', { tab: 'ask' }) } },
         h('span', { text: ASK_TITLE }), h('span', { className: 'home-dot', 'aria-hidden': 'true' })) : null,
     ].filter(Boolean));
+  }
+
+  // 期中季那一行：安静的一句，不抢主按钮。错题卷那天是个文字按钮（有错题卷这个界面时）
+  function examLine(season) {
+    if (!season || !season.note) return null;
+    if (season.phase === 'paper' && ROUTES[PAPER_ROUTE]) {
+      return h('button', { type: 'button', className: 'text-btn home-exam home-exam-go', on: { click: () => ctx.go(PAPER_ROUTE) } },
+        h('span', {}, withNumbers(season.note)), icon('chev'));
+    }
+    return h('p', { className: 'home-exam' }, withNumbers(season.note));
   }
 
   // 私人老师：主动找她聊的小卡，和一直在的“有问题，问我”
@@ -377,6 +452,20 @@ export function createHome(ctx) {
     return h('div', { className: 'home-teacher' }, card,
       h('button', { type: 'button', className: 'btn quiet home-ask', on: { click: () => ctx.go('chat', { mode: 'free' }) } }, icon('chat'), h('span', { text: ASK_LABEL })));
   }
+  // 期中季维护（examUpkeep）：叫醒、考前压缩，变了的卡存回去。存不上只记 console，首页照样按新排程显示，下次再存
+  async function keepExam(list) {
+    const ex = exam();
+    if (!ex || !ex.date) return list;
+    let up;
+    try { up = examUpkeep(list, ex, today(), ctx.kv.peek('examWoke', null)); } catch (e) { console.warn('home exam:', (e && e.message) || e); return list; }
+    if (!up.changed.length && !up.woke) return up.cards;
+    try {
+      for (const c of up.changed) await ctx.store.put('items', c);
+      if (up.woke) await ctx.kv.set('examWoke', up.woke);
+    } catch (e) { console.warn('home exam save:', (e && e.message) || e); }
+    return up.cards;
+  }
+
   async function skipProbe() {
     probe = null;
     try { await ctx.kv.set('probeDay', today()); } catch (e) { console.warn('probeDay', e); }
@@ -392,7 +481,10 @@ export function createHome(ctx) {
         todayAttempts(),
       ]);
       if (mine !== token) return;
-      cards = (Array.isArray(all) ? all : []).filter(c => c && typeof c === 'object' && c.id != null);
+      const list = (Array.isArray(all) ? all : []).filter(c => c && typeof c === 'object' && c.id != null);
+      const kept = await keepExam(list);
+      if (mine !== token) return;
+      cards = kept;
       attempts = att;
     } catch (e) {
       console.warn('home:', (e && e.message) || e);

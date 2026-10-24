@@ -6,7 +6,7 @@
 .m-sign { margin-right: .04em; }
 .m-sup { font-size: .68em; vertical-align: .62em; line-height: 0; margin-left: .04em; }
 .m-sub { font-size: .68em; vertical-align: -.3em; line-height: 0; }
-.m-frac { display: inline-flex; flex-direction: column; align-items: center; vertical-align: -.62em; margin: 0 .12em; font-size: .92em; line-height: 1.12; }
+.m-frac { display: inline-flex; flex-direction: column; align-items: center; vertical-align: .55em; margin: 0 .12em; font-size: .92em; line-height: 1.12; }
 .m-num { padding: 0 .16em .04em; }
 .m-den { padding: .06em .16em 0; border-top: .07em solid currentColor; align-self: stretch; text-align: center; }
 .m-sqrt { white-space: nowrap; }

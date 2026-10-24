@@ -12,6 +12,14 @@
 /* v0.3.1 招呼下面那一句：最近一件具体的事（“昨天那道 −3² 的题，今天在复习里等你。”），像老师见面时顺口提一句 */
 .home-greet{margin-top:12px;font:500 21px/1.5 var(--serif);max-width:28em;text-wrap:pretty}
 
+/* v1 期中季：招呼下面一行安静的提示（离期中还有几天、错题卷、考前早点睡、考完拍卷子）。小字、灰色，不抢主按钮；
+   错题卷那几天是个文字按钮，强调色，后面一个小箭头 */
+.home-exam{margin-top:14px;font-size:16px;line-height:1.6;color:var(--muted);max-width:34em;text-wrap:pretty}
+.home-exam .n{font-variant-numeric:lining-nums tabular-nums;font-weight:600;color:var(--ink)}
+.text-btn.home-exam-go{align-self:flex-start;justify-content:flex-start;margin:6px -10px 0;min-height:44px;color:var(--accent);font-size:16px;line-height:1.5;text-align:left}
+.home-exam-go .n{color:inherit}
+.home-exam-go .icon{width:16px;height:16px;flex:none}
+
 .home-review{display:flex;flex-direction:column;margin-top:40px}
 .home-line{font-size:26px;max-width:24em}
 .home-why{margin-top:12px;font-size:16px;line-height:1.6;color:var(--muted);text-wrap:pretty;max-width:34em}
@@ -47,6 +55,7 @@
 @media (min-width:700px){
   .home-hello{margin-top:72px;font-size:40px}
   .home-greet{margin-top:14px;font-size:23px}
+  .home-exam,.text-btn.home-exam-go{font-size:17px}
   .home-review{margin-top:56px}
   .home-line{font-size:28px}
   .home-why{font-size:17px}

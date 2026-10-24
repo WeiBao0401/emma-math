@@ -40,6 +40,26 @@
 //   inExamSeason(day, exam), isWeekend(day), isLate(date)    期中季 = 考试前 14 天到考完；21:00 以后算晚
 //   shortName(card, curriculum) -> 12 字以内的坑名（SHORT_NAMES 先，没有再从课程数据和诊断里截）
 //   SHORT_NAMES                  七上 76 个错因 id 的短名，家长过目
+//
+// v1 期中季（DESIGN 2.4、4.9，C 9.3，调研 03 2.11）。只追一件够得着的事：范围内每个犯过的坑，考前独立做对一次。
+//   examPlan(cards, exam, today, { paperDone }) -> { daysLeft, phase, wake: [cardId], note }
+//       phase  'none'    没填日期、离考试多于 21 天、考完超过 3 天
+//              'season'  离考试 6 到 21 天。wake 是范围内跨过去的卡和休息中的轻卡（各叫醒一次，调用方用 wake() 叫，
+//                        首页第一次进期中季时做，kv 'examWoke' 记着）
+//              'paper'   考前 3 到 5 天，推荐错题卷（拆两半，一半 15 分钟）。日历 A 来不及：调用方明说卷子还没做
+//                        （paperDone === false）时，考前第 2 天也算 paper（DESIGN 2.4）
+//              'rest'    考前 2 天到考完：只推轻松版复习，不推新讲
+//              'after'   考完后 3 天内：提醒把发回来的卷子拍进来
+//       note 是首页那一行（孩子看的字），phase 'none' 时 ''。daysLeft 没填日期时是 null
+//   compressDue(card, exam, today) -> card      考前压缩，recordReview（或 newCard、fileProblem）之后由调用方套用；
+//       没变就原样返回（c === card），变了是新对象，带 examMoved: { exam, from }。两条规矩：
+//       过了第 1 档的卡（stage ≥ 2），下一次排在原来那天和“考前第 3 天”里较早的那天，和上一次复习至少隔 2 天，
+//         排不下就不动（错题卷里会放它一题）；
+//       考前 2 天内新建（或刚并进新题）的卡只做当天的同构题，下一次排到考完的第二天。
+//   inExamRange(card, exam) -> bool              卡在不在考试范围：按节（'2.3.1' 算在 '2.3' 里）；没选范围、卡没有节都算
+//   examEnd(exam) -> 'YYYY-MM-DD'                考试最后一天（没有 end 就是 date）
+// 期中季这个词有两个窗口：quotaFor 的新讲名额 3 道还是 inExamSeason 的 14 天（CONTRACTS 12），examPlan 的 season 是 21 天
+// （DESIGN 4.9 “离考试不到 21 天”）。
 // 轻卡让 reviewPlan、recordReview、wake 多了一个分支（card.light 为真时），正常卡的行为一点没变。
 // 卡上另加的字段：light、found、restOn、promotedOn、checkpoint、mergedOn、originals[]（见 CONTRACTS 12）。
 
@@ -259,6 +279,101 @@ export function quotaFor(day = dayOf(), { exam = null, light = false } = {}) {
     reviewMax: light ? Math.min(base.reviewMax, QUOTA.lightReviewMax) : base.reviewMax,
     weekend, examSeason, light: !!light,
   };
+}
+
+// ---------------------------------------------------------------- v1 期中季（DESIGN 2.4、4.9）
+
+export const EXAM_WINDOW_DAYS = 21, EXAM_PAPER_FROM = 5, EXAM_PAPER_TO = 3, EXAM_REST_DAYS = 2, EXAM_AFTER_DAYS = 3, EXAM_MIN_GAP = 2;
+const isYmd = d => /^\d{4}-\d{2}-\d{2}$/.test(String(d || ''));
+
+export function examEnd(exam) {
+  const start = ymdOf(exam && exam.date);
+  const end = ymdOf(exam && exam.end);
+  return end > start ? end : start;
+}
+
+// 范围是家长选的节（ui-parent examRecord：'1.1'、'2.3'……）；卡上的节可能细到 '2.3.1'。没选范围时都算：期中前学过的
+// 多半就是要考的。卡上没有节的也算，宁可多叫醒一张，也别让一个坑考前没碰过
+export function inExamRange(card, exam) {
+  const list = (exam && Array.isArray(exam.sections) ? exam.sections : []).map(s => String(s || '').trim()).filter(Boolean);
+  if (!list.length) return true;
+  const raw = card && (card.section || (card.diagnosis && card.diagnosis.section));
+  const sec = String(raw || '').trim().split(/\s+/)[0];
+  if (!sec) return true;
+  return list.some(s => sec === s || sec.startsWith(s + '.') || s.startsWith(sec + '.'));
+}
+
+// 这张卡最近一次被考过（复习、休息、跨过去）是哪天
+const lastSeen = c => {
+  const r = Array.isArray(c.reviews) && c.reviews.length ? c.reviews[c.reviews.length - 1] : null;
+  return [r && r.day, c.restOn, c.beatenOn].filter(isYmd).sort().pop() || '';
+};
+
+export const EXAM_NOTES = {
+  season: n => `离期中还有 ${n} 天。这周把范围里的坑各做对一次就好。`,
+  paper: '考前做一份错题卷吧，拆成两半，一半 15 分钟。',
+  paperDone: '错题卷做完了。卷上错的题，再过一遍就好。',
+  rest: '考前两天，轻松复习，早点睡。',
+  examDay: '今天考试。轻松复习一下，早点睡。',
+  examDays: '考试这几天，轻松复习，早点睡。',
+  after: '考完了。卷子发回来，拍进来我们一起看。',
+};
+
+export function examPlan(cards = [], exam = null, today = dayOf(), { paperDone } = {}) {
+  const date = ymdOf(exam && exam.date);
+  if (!date || !isYmd(today)) return { daysLeft: null, phase: 'none', wake: [], note: '' };
+  const end = examEnd(exam);
+  const daysLeft = daysBetween(today, date);
+  const out = { daysLeft, phase: 'none', wake: [], note: '' };
+  if (today > end) {
+    if (daysBetween(end, today) <= EXAM_AFTER_DAYS) { out.phase = 'after'; out.note = EXAM_NOTES.after; }
+    return out;
+  }
+  if (daysLeft > EXAM_WINDOW_DAYS) return out;
+  if (daysLeft > EXAM_PAPER_FROM) {
+    out.phase = 'season';
+    out.note = EXAM_NOTES.season(daysLeft);
+    // 跨过去的卡、休息中的轻卡各回来一题（DESIGN 4.4、4.5）。这 3 周里已经叫醒过、或者已经考过一次的不再叫
+    const from = addDays(date, -EXAM_WINDOW_DAYS);
+    out.wake = (Array.isArray(cards) ? cards : [])
+      .filter(c => c && c.id != null && inExamRange(c, exam)
+        && (c.status === 'beaten' || (c.light && c.status === 'learning' && !c.due))
+        && !(isYmd(c.woken) && c.woken >= from) && !(lastSeen(c) >= from))
+      .map(c => c.id);
+    return out;
+  }
+  if (daysLeft >= EXAM_PAPER_TO || (daysLeft === EXAM_REST_DAYS && paperDone === false)) {
+    out.phase = 'paper';
+    out.note = paperDone === true ? EXAM_NOTES.paperDone : EXAM_NOTES.paper;
+    return out;
+  }
+  out.phase = 'rest';
+  out.note = daysLeft > 0 ? EXAM_NOTES.rest : date === end ? EXAM_NOTES.examDay : EXAM_NOTES.examDays;
+  return out;
+}
+
+export function compressDue(card, exam, today = dayOf()) {
+  const date = ymdOf(exam && exam.date);
+  if (!card || !date || !isYmd(today) || card.status !== 'learning' || !isYmd(card.due) || !inExamRange(card, exam)) return card;
+  const end = examEnd(exam);
+  const left = daysBetween(today, date);
+  if (today > end || left > EXAM_WINDOW_DAYS) return card;
+  const moved = due => ({ ...structuredClone(card), due, examMoved: { exam: date, from: card.due } });
+  const reviews = Array.isArray(card.reviews) ? card.reviews : [];
+  // 考前 2 天内新建、或刚并进新题的卡：当天做完同构题就停，下一次排到考后（考前不处理大批新错题，调研 03 2.11）
+  if (left <= EXAM_REST_DAYS) {
+    const restFrom = addDays(date, -EXAM_REST_DAYS);
+    const born = isYmd(card.mergedOn) && card.mergedOn >= restFrom ? card.mergedOn : card.day;
+    const fresh = card.stage === 1 && isYmd(born) && born >= restFrom && !reviews.some(r => r && r.day >= born);
+    return fresh && card.due <= end ? moved(addDays(end, 1)) : card;
+  }
+  // 过了第 1 档的卡：下一次不晚于考前第 3 天，和上一次至少隔 2 天；排不下就照原样（错题卷里有它一题）
+  if (card.light || !(card.stage >= 2)) return card;
+  const target = addDays(date, -EXAM_PAPER_TO);
+  if (card.due <= target) return card;
+  const last = lastSeen(card) || today;
+  const soonest = [addDays(last, EXAM_MIN_GAP), today].sort().pop();
+  return target >= soonest ? moved(target) : card;
 }
 
 // 她看到的坑名（C 4.2）：12 字以内，说的是那个坑，不说她。七上全部 76 个错因 id，期中范围是第 1 到 3 章。

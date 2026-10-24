@@ -48,7 +48,7 @@ const clip = (s, n) => { const a = cps(s); return a.length > n ? a.slice(0, n - 
 const shortQ = stem => plain(str(stem)).replace(/^\s*(?:\(\d+\)|（\d+）|\d+\s*[.、．])?\s*(?:计算|化简|求值|解方程|解下列方程)?\s*[:：]?\s*/, '').replace(/\s*=\s*$/, '').trim();
 
 const SOURCE_WORD = { '作业本': '作业', '练习册': '练习册', '单元测': '单元测', '试卷': '试卷' };
-const KIND_WORD = { redo: '复习原题', variant: '复习', twin: '讲题时的同构题', 'self-fix': '改错', chat: '聊天时的练习' };
+const KIND_WORD = { redo: '复习原题', variant: '复习', twin: '讲题时的同构题', 'self-fix': '改错', chat: '聊天时的练习', paper: '错题卷' };
 
 export function evidenceOfCard(card = {}) {
   const p = card.problem || {};

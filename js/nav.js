@@ -28,6 +28,7 @@ export const ROUTES = {
   parent: { section: 'parent', parent: 'home', back: '首页', title: '家长' },           // ui-parent
   onboard: { section: 'onboard', title: '约定' },                                     // ui-onboard { review? }
   chat: { section: 'chat', parent: 'home', back: '首页', title: '问我' },               // ui-chat { mode, point?, cardId?, chatId? }（v0.3）
+  paper: { section: 'paper', parent: 'home', back: '首页', title: '错题卷' },           // ui-paper { sections? }（v0.4 考前错题卷）
 };
 export const DEFAULT_ROUTE = 'home';
 export const SECTIONS = [...new Set(Object.values(ROUTES).map(r => r.section))];
