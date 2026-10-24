@@ -112,4 +112,7 @@
 .with-bar .page.book-card{padding-bottom:calc(var(--bar) + 96px)}
 .book-bar-btns{display:flex;flex-wrap:wrap;align-items:center;gap:8px 24px}
 .book-bar-btns .btn{min-width:200px}
+/* v0.3：卡详情的“问我” */
+.book-askme{display:inline-flex;align-items:center;gap:6px}
+.book-askme .icon{width:18px;height:18px}
 .book-bar-q{font-size:15px;line-height:1.5;margin-bottom:8px}

@@ -35,6 +35,7 @@ import { parentDetail } from './kid-errors.js';
 import { exportFileName, parseExportText, EXPORT_FORMAT, EXPORT_VERSION } from './db.js';
 import { RECOGNIZE_CASES } from './mock.js';
 import { loadCurriculum } from './curriculum.js';
+import { loadProfile } from './profile.js';
 
 // ---------------------------------------------------------------- 数字码（纯函数）
 
@@ -519,6 +520,7 @@ export function createParent(ctx) {
     mainBox.hidden = false;
     lockBtn.hidden = true;
     loadItems();
+    loadProf();
     refreshStorage();
     render();
     touch();
@@ -795,6 +797,85 @@ export function createParent(ctx) {
       row({ key: 'progress', label: '学到哪一节', sub: '进度锚点', value: progressText(peek('progress', {}), curriculum), panel: progressPanel }),
       row({ key: 'exam', label: '考试', sub: '日期和范围', value: examSummary(peek('exam', {}), sections(), todayStr()), panel: examPanel }),
     ]);
+  }
+
+  // ---------------------------------------------------------------- v0.3 老师眼里的 Emma（学情档案，profile.js）
+  // 和对话里老师看到的是同一份：最需要帮的点（带证据）、已经跨过去的、最近的进步、和老师聊过的。只读。
+  let prof = null;         // null = 还在算
+  function loadProf() {
+    loadProfile(ctx).then(p => { prof = p; softRender(); }, e => { console.warn('profile', e); prof = { weak: [], strong: [], recent: [], text: '' }; softRender(); });
+  }
+  function weakPanel() {
+    if (prof === null) return [loading()];
+    if (!prof.weak.length) return [h('p', { className: 'small', text: '还没有看出要特别帮的地方。错题讲过几道、复习做过几次以后，这里会列出来。' })];
+    return [
+      h('p', { className: 'small', text: '按错题卡、近 14 天的复习、对话里老师记下的情况算出来，越靠前越需要帮。老师主动找她聊、回答她的问题时，会参考这几条。' }),
+      h('ol', { className: 'parent-list parent-weak' }, ...prof.weak.map(w => h('li', { className: 'parent-item' },
+        h('div', { className: 'parent-item-body' },
+          h('p', { className: 'parent-q', text: w.name + (w.learning ? (w.stage ? `（在练，第 ${w.stage} 档）` : '（在练）') : '') }),
+          ...w.evidence.map(t => h('p', { className: 'small', text: t })),
+          h('p', { className: 'small parent-meta', text: `分数 ${w.score}${w.tag ? ' · ' + w.tag : ''}` }))))),
+    ];
+  }
+  function chatsPanel() {
+    const list = peek('chats', []);
+    if (!list.length) return [h('p', { className: 'small', text: '她还没和老师聊过。' })];
+    const MODE = { free: '她问的', probe: '老师找她聊', problem: '讲完错题接着问' };
+    return [
+      h('p', { className: 'small', text: '最近 50 段，只存在这台 iPad 上。' }),
+      h('ul', { className: 'parent-list' }, ...list.slice(0, 20).map(x => h('li', { className: 'parent-item' },
+        h('div', { className: 'parent-item-body' },
+          h('p', { className: 'parent-q', text: x.title || '问我' }),
+          h('p', { className: 'small parent-meta', text: [MODE[x.mode] || '', ago(x.updated || x.at)].filter(Boolean).join(' · ') }))))),
+    ];
+  }
+  function teacherGroup() {
+    const n = prof === null ? '' : prof.weak.length ? `${prof.weak.length} 个` : '还没有';
+    const chats = peek('chats', []);
+    return group('老师眼里的 Emma', [
+      row({ key: 'weak', label: '最需要帮的', sub: '带证据，越靠前越需要帮', value: n, panel: weakPanel }),
+      row({ key: 'strong', label: '已经跨过去的', value: prof === null ? '' : prof.strong.length ? `${prof.strong.length} 个` : '还没有',
+        panel: () => (prof === null ? [loading()] : prof.strong.length ? [h('p', { text: prof.strong.map(x => x.name).join('、') })] : [h('p', { className: 'small', text: '攻克了的坑、对话里弄懂了的点会出现在这里。' })]) }),
+      row({ key: 'recent7', label: '最近的进步', sub: '近 7 天', value: prof === null ? '' : prof.recent.length ? `${prof.recent.length} 条` : '还没有',
+        panel: () => (prof === null ? [loading()] : prof.recent.length ? prof.recent.map(t => h('p', { className: 'small', text: t })) : [h('p', { className: 'small', text: '近 7 天还没有。' })]) }),
+      row({ key: 'chats', label: '和老师聊过的', value: chats.length ? `${chats.length} 段` : '还没有', panel: chatsPanel }),
+    ], '只读。老师每次和她对话都带着这份档案。');
+  }
+
+  // ---------------------------------------------------------------- v0.3 语音转文字（voice.js）
+  function doubaoPanel() {
+    const d = settings().doubao || {};
+    const appId = h('input', { type: 'text', className: 'field mono', placeholder: 'App ID', autocomplete: 'off', autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false', 'aria-label': '豆包 App ID', value: d.appId || '' });
+    const key = h('input', { type: 'password', className: 'field mono', placeholder: d.accessKey ? '已填（不显示），要换就粘贴新的' : 'Access Key', autocomplete: 'off', autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false', 'aria-label': '豆包 Access Key' });
+    if (justOpened === 'doubao') requestAnimationFrame(() => appId.focus());
+    const clean = v => String(v || '').replace(/[\s\u200b-\u200d\u2060\ufeff]/g, '');
+    const save = async () => {
+      const next = { appId: clean(appId.value), accessKey: clean(key.value) || d.accessKey || '' };
+      if (!next.appId || !next.accessKey) { toast('App ID 和 Access Key 都要填'); return; }
+      if (await saveSettings({ doubao: next, asr: 'doubao' }, '存好了，语音改用豆包')) closeRow('doubao');
+    };
+    return [
+      h('p', { className: 'small', text: '火山引擎控制台“豆包语音”里，开通“大模型录音文件识别极速版”，复制 App ID 和 Access Key。只存在这台 iPad 上，不进备份文件。' }),
+      h('p', { className: 'small', text: '还没实测过：豆包没转成（Key 不对、浏览器不让直接调用等），会自动改用 Poe，她感觉不到，“最近的 AI 调用”里能看到原因。' }),
+      h('label', { className: 'fld' }, h('span', { className: 'fld-k', text: 'App ID' }), appId),
+      h('label', { className: 'fld' }, h('span', { className: 'fld-k', text: 'Access Key' }), key),
+      h('div', { className: 'btn-row' },
+        h('button', { type: 'button', className: 'btn', text: '保存', on: { click: save } }),
+        h('button', { type: 'button', className: 'text-btn', text: '取消', on: { click: () => closeRow('doubao') } }),
+        d.appId || d.accessKey ? h('button', { type: 'button', className: 'text-btn danger', text: '清除', on: { click: async () => { if (await saveSettings({ doubao: { appId: '', accessKey: '' }, asr: 'poe' }, '清掉了，语音用 Poe')) closeRow('doubao'); } } }) : null),
+    ];
+  }
+  function voiceGroup() {
+    const s = settings();
+    const d = s.doubao || {};
+    const ready = !!(d.appId && d.accessKey);
+    const asr = s.asr === 'doubao' ? 'doubao' : 'poe';
+    return group('语音转文字', [
+      row({ label: '她说的话用谁转成文字', sub: asr === 'doubao' && !ready ? '选了豆包但还没填 Key，现在用的是 Poe' : '转好的字先放进输入框，她看一眼再发', cls: 'parent-model',
+        right: select([{ value: 'poe', text: 'Poe（gemini-3.1-pro）' }, { value: 'doubao', text: '豆包语音' }], asr,
+          async v => { if (await saveSettings({ asr: v }, v === 'doubao' && !ready ? '再填上豆包的 App ID 和 Key' : '')) render(); }, '语音转文字') }),
+      row({ key: 'doubao', label: '豆包 App ID 和 Key', sub: '火山引擎，录音文件识别极速版', value: ready ? '已填' : '还没填', panel: doubaoPanel }),
+    ], 'Poe 转一段 10 秒的话大约 7 到 9 秒。');
   }
 
   // ---------------------------------------------------------------- 两张清单：问老师、“这题有问题”
@@ -1124,9 +1205,11 @@ export function createParent(ctx) {
       connectionGroup(),
       moneyGroup(),
       studyGroup(),
+      teacherGroup(),
       listsGroup(),
       recentGroup(),
       modelGroup(),
+      voiceGroup(),
       dataGroup(),
       mockGroup(),
       aboutGroup(),
@@ -1139,6 +1222,7 @@ export function createParent(ctx) {
       if (!curriculum && ctx.curriculum) curriculum = ctx.curriculum;
       if (!unlocked) { unlock(); return; }   // Wei 10-24：家长区不要数字码，点进来就是
       loadItems();
+      loadProf();
       refreshStorage();
       render();
       touch();

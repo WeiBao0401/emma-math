@@ -40,6 +40,7 @@ import { createCapture, createPage, createConfirm } from './ui-capture.js';
 import { createExplain } from './ui-explain.js';
 import { createPractice } from './ui-practice.js';
 import { createParent } from './ui-parent.js';
+import { createChat } from './ui-chat.js';
 
 const params = new URLSearchParams(location.search);
 const mockForced = params.get('mock') === '1';
@@ -148,6 +149,7 @@ const VIEW_FACTORIES = {
   card: createCard,
   parent: createParent,
   onboard: createOnboard,
+  chat: createChat,           // v0.3 问我：自由问答、老师主动找她聊、讲完错题接着问
 };
 
 // ---------------------------------------------------------------- Service Worker

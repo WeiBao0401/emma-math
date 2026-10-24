@@ -81,6 +81,11 @@ export const ICONS = {
   eye: svg('<path d="M2.8 12S6.2 5.8 12 5.8 21.2 12 21.2 12 17.8 18.2 12 18.2 2.8 12 2.8 12z"/><circle cx="12" cy="12" r="2.9"/>'),
   eyeOff: svg('<path d="M2.8 12S6.2 5.8 12 5.8 21.2 12 21.2 12 17.8 18.2 12 18.2 2.8 12 2.8 12z"/><circle cx="12" cy="12" r="2.9"/><path d="M4.5 4.5 19.5 19.5"/>'),
   sun: svg('<circle cx="12" cy="12" r="4"/><path d="M12 3.5v2M12 18.5v2M3.5 12h2M18.5 12h2M6 6l1.4 1.4M16.6 16.6 18 18M6 18l1.4-1.4M16.6 7.4 18 6"/>'),
+  // v0.3 问我：说话、发送、停、对话
+  mic: svg('<rect x="9" y="3.5" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0"/><path d="M12 18v2.5"/>'),
+  send: svg('<path d="M12 19.5V5"/><path d="M6 10.5 12 4.5l6 6"/>'),
+  stop: svg('<rect x="7" y="7" width="10" height="10" rx="1.5"/>'),
+  chat: svg('<path d="M4.5 6.5A2 2 0 0 1 6.5 4.5h11a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H11l-4.5 3.5V16.5h0a2 2 0 0 1-2-2z"/><path d="M8.5 9h7M8.5 12h4.5"/>'),
 };
 
 // -> <svg class="icon extra">；className 加在 "icon" 后面

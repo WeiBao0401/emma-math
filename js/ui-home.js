@@ -25,6 +25,13 @@ import { dayOf, due, reviewPlan, quotaFor, shortName, LATE_HOUR } from './notebo
 import { kidMessage } from './kid-errors.js';
 import { relDay, pendingList } from './ui-book.js';
 import { needsOnboard } from './ui-onboard.js';
+import { loadProfile, probePoint, probeLine } from './profile.js';
+
+// v0.3 私人老师（CONTRACTS 17）：首页多两样东西，放在复习和拍错题下面：
+//   老师主动找她：学情档案里最需要帮的那个点分数够高、今天还没聊过（kv 'probeDay'）时，一张小卡“想和你聊 3 分钟：…”，
+//     “好，聊聊”去 chat { mode: 'probe', point }，“今天先不”记下 probeDay，今天不再出
+//   “有问题，问我”：一直在，去 chat { mode: 'free' }
+export const ASK_LABEL = '有问题，问我';
 
 // ---------------------------------------------------------------- 纯函数
 
@@ -138,6 +145,7 @@ export function createHome(ctx) {
 
   let cards = null;
   let attempts = null;   // 今天的作答记录；读不到时为 null，homePlan 改数卡上的复习
+  let probe = null;      // 老师想主动聊的点（profile.probePoint），没有就是 null
   let token = 0;
   const today = () => (typeof ctx.today === 'function' ? ctx.today() : dayOf());
   // 今天零点（本地）以后的作答，at 是 ISO 时间，所以按本地零点换成 ISO 再比
@@ -195,6 +203,7 @@ export function createHome(ctx) {
       }
     }
     if (budgetOut()) out.push(h('p', { className: 'status-line home-note' }, icon('info'), h('span', { text: kidMessage('budget-day', { where: 'photo' }) })));
+    out.push(teacherEl());
     body.replaceChildren(...out);
 
     const pending = pendingList(ctx.kv);
@@ -204,6 +213,24 @@ export function createHome(ctx) {
       h('button', { type: 'button', className: 'text-btn home-link', on: { click: () => ctx.go('book') } }, icon('book'), h('span', { text: '错题本' })),
       ask ? h('button', { type: 'button', className: 'text-btn home-link', on: { click: () => ctx.go('book', { tab: 'ask' }) } }, withNumbers(`问老师 ${ask} 道`)) : null,
     ].filter(Boolean));
+  }
+
+  // 私人老师：主动找她聊的小卡，和一直在的“有问题，问我”
+  function teacherEl() {
+    const line = probeLine(probe);
+    const card = probe ? h('div', { className: 'home-probe' },
+      h('p', { className: 'home-probe-title', text: line.title }),
+      line.why ? h('p', { className: 'home-probe-why', text: line.why }) : null,
+      h('div', { className: 'btn-row' },
+        h('button', { type: 'button', className: 'btn', text: '好，聊聊', on: { click: () => ctx.go('chat', { mode: 'probe', point: probe }) } }),
+        h('button', { type: 'button', className: 'text-btn', text: '今天先不', on: { click: skipProbe } }))) : null;
+    return h('div', { className: 'home-teacher' }, card,
+      h('button', { type: 'button', className: 'btn quiet home-ask', on: { click: () => ctx.go('chat', { mode: 'free' }) } }, icon('chat'), h('span', { text: ASK_LABEL })));
+  }
+  async function skipProbe() {
+    probe = null;
+    try { await ctx.kv.set('probeDay', today()); } catch (e) { console.warn('probeDay', e); }
+    render();
   }
 
   async function refresh() {
@@ -223,6 +250,15 @@ export function createHome(ctx) {
       cards = cards || [];
     }
     render();
+    // 学情档案慢一点没关系：算好了再把小卡放上来
+    try {
+      const prof = await loadProfile(ctx);
+      if (mine !== token) return;
+      const next = probePoint(prof, { today: today(), probeDay: ctx.kv.peek('probeDay', '') });
+      const changed = (next && next.name) !== (probe && probe.name);
+      probe = next;
+      if (changed) render();
+    } catch (e) { console.warn('home profile:', (e && e.message) || e); }
   }
 
   return {

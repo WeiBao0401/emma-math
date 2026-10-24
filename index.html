@@ -18,7 +18,7 @@
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" type="image/png" href="icon-180.png">
 <!-- base.css：设计 token 和共用控件；math.css：公式；keypad.css：答题小键盘（复习、讲题、确认屏都用，所以全局）；
-     后面每个界面一张自己的样式表，类名各带前缀（home- cap- ex- pr- book- onboard- parent-） -->
+     后面每个界面一张自己的样式表，类名各带前缀（home- cap- ex- pr- book- onboard- parent- chat-） -->
 <link rel="stylesheet" href="css/base.css">
 <link rel="stylesheet" href="css/math.css">
 <link rel="stylesheet" href="css/keypad.css">
@@ -29,6 +29,7 @@
 <link rel="stylesheet" href="css/book.css">
 <link rel="stylesheet" href="css/onboard.css">
 <link rel="stylesheet" href="css/parent.css">
+<link rel="stylesheet" href="css/chat.css">
 </head>
 <body>
 <main id="main">
@@ -72,6 +73,9 @@
 
   <!-- 第一次打开：老师和你的约定（ui-onboard.js） -->
   <section id="view-onboard" class="view" hidden></section>
+
+  <!-- 问我：自由问答、老师主动找她聊、讲完错题接着问，打字、说话、拍题（ui-chat.js，v0.3） -->
+  <section id="view-chat" class="view" hidden></section>
 </main>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 <noscript><p class="boot-msg">Emma 的数学老师需要打开 JavaScript。</p></noscript>

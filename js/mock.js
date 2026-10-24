@@ -15,6 +15,18 @@
 //   mockAnswer(task, { text, images, mockCase }) -> object   每次一份新的对象，随便改
 //     task：recognize | explain | variants | solve | hint | reflect（别的任务给 {}）
 //     mockCase：settings.mockCase。看照片时选页（见上），其他任务时可以直接写题目名（'order' 等）
+//   mockText(task, { text, images, mockCase }) -> string     要纯文字的任务（ask 的 raw）：listen 给 MOCK_TRANSCRIPT
+//   MOCK_TRANSCRIPT                         模拟的录音转写：“老师，负三的平方为什么是负九？”
+//   CHAT_CASES                              mockChat 认的场景名（settings.mockCase 写其中一个就固定用那一段）
+//   mockChat({ messages, mockCase }) -> string   v0.3 私人老师的假回答（ai.chat 每 40 毫秒流出一小段）。按对话认场景：
+//     probe     第一条是 teacher.js probeUser 发的（“主动开启”）：打招呼、说为什么想聊、只问一个小问题，不讲、不出题
+//     problem   对话里有 problemContext（“讲完一道错题”）、老师还没说过话：先问她卡在哪一步
+//     free      问到 −3²（平方、乘方、负三……）：讲一个点，带【练习】计算 \(-4^2\) 和【记录】gap
+//     retry     “还是不懂”：换一种讲法（相反数按钮），带【记录】
+//     example   “举个例子”：几组对比           quiz   “出一道题考考我”：只出【练习】
+//     gotit     “懂了”：用一个小问题确认         right / wrong   她报了练习的结果（“我的答案……”，带“不对”“错”算 wrong）
+//     photo     只发了照片：先问她第一步打算怎么做    other   别的问题：先弄清她卡在哪
+//     对话里的题是别的仿真题（去括号、去分母、乘除顺序、几何）时，free、retry、quiz 用那道题的讲法和同构题
 //
 // 形状（和 bakeoff/prompts/*.md 一致，另加比拼报告“要改进的地方”第 2 条的 answer_kind）
 //   recognize  { graded, rotation, page, problems: [{ no, type, stem, options, figure, her_work, her_answer, mark,
@@ -324,4 +336,159 @@ export function mockAnswer(task, { text = '', images = [], mockCase = '' } = {})
     };
   }
   return {};
+}
+
+// ---------------------------------------------------------------- v0.3 private teacher: voice and chat
+
+export const MOCK_TRANSCRIPT = '老师，负三的平方为什么是负九？';
+
+export function mockText(task, opts = {}) {
+  if (task === 'listen') return MOCK_TRANSCRIPT;
+  if (task === 'chat') return mockChat(opts);
+  return JSON.stringify(mockAnswer(task, opts));
+}
+
+export const CHAT_CASES = ['probe', 'problem', 'free', 'retry', 'example', 'quiz', 'gotit', 'right', 'wrong', 'photo', 'other'];
+
+// the point each mock problem is about, in her words (what a 【记录】 line names)
+const POINTS = {
+  powers: '乘方前面的负号', order: '乘除同级的顺序', brackets: '去括号时的符号', equation: '去分母要乘每一项', geometry: '点在直线上要分两种情况',
+};
+// the hidden lines are written as a model writes them: the marker, then one JSON object on the same line
+const hidden = (kind, obj) => `【${kind}】${JSON.stringify(obj)}`;
+const practiceOf = x => ({ q: x.q, answer: x.answer, answer_kind: x.answer_kind || 'text', form: x.form || '' });
+const note = (kind, topic, note) => hidden('记录', { kind, tag: MORE[topic].tag, point: POINTS[topic], note });
+
+// written like gpt-5.4 answers with teacher.js: short sentences, one point, inline \( \), at most 4 list items,
+// then a small question or a practice line. Single backslashes in the 【练习】 JSON, the way models write it.
+const POWERS = {
+  free: L`你问到点子上了。关键是看清：平方管的是谁。
+\(-3^2\) 没有括号，平方只管紧挨着它的 3，负号在外面等着。所以先算 \(3^2=9\)，再带上负号，得 \(-9\)。
+要是写成 \((-3)^2\)，括号把负号也包进去了，才是 \((-3)\times(-3)=9\)。
+- 没括号：先平方，再带负号
+- 有括号：连负号一起平方
+你来试一道，看看是不是想通了。
+【练习】{"q":"计算 \(-4^2\)","answer":"-16","answer_kind":"number"}
+【记录】{"kind":"gap","tag":"E-pow-neg-paren","point":"乘方前面的负号","note":"她问 −3² 为什么是 −9，说明她把它读成了 (−3)²"}`,
+  retry: L`没关系，我换个说法。
+把前面的负号想成一个按钮，按一下，数就变成它的相反数。
+\(-3^2\)：先算 \(3^2=9\)，最后按一下按钮，变成 \(-9\)。
+\((-3)^2\)：括号里先按按钮，得到 \(-3\)，再拿 \(-3\) 去平方，\((-3)\times(-3)=9\)。
+同样是一个负号、一个平方，先做哪一步不一样，结果就不一样。
+你用按钮的说法讲给我听：\(-2^2\) 先做哪一步？结果是多少？
+【记录】{"kind":"gap","tag":"E-pow-neg-paren","point":"乘方前面的负号","note":"第一种讲法以后她还是不懂，换成了“相反数按钮”的讲法"}`,
+  example: L`好，我们看几组，一对一对比着看。
+- \(-2^2=-(2\times 2)=-4\)，\((-2)^2=(-2)\times(-2)=4\)
+- \(-5^2=-25\)，\((-5)^2=25\)
+- \(-1^2=-1\)，\((-1)^2=1\)
+每一对里，有括号的都是正的，没括号的都是负的。
+你说说看，为什么有括号的就变成正的了？`,
+  quiz: L`好，来一道。只考刚才说的那一点：做之前先问自己，平方管的是谁。
+【练习】{"q":"计算 \(-5^2+(-2)^2\)","answer":"-21","answer_kind":"number"}`,
+  gotit: L`好。那我用一个小问题确认一下：\(-1^2\) 和 \((-1)^2\)，哪一个等于 \(-1\)？说说你是怎么看出来的。`,
+  right: L`对了。你没有让负号跟着平方，先算乘方、最后带上负号，顺序完全对。
+以后看到负号和乘方挨在一起，先停一下，问自己：平方管的是谁？
+这个点我记下了，过几天复习时再出一道，看看你还记不记得。
+【记录】{"kind":"ok","tag":"E-pow-neg-paren","point":"乘方前面的负号","note":"讲完以后当场练习做对了"}`,
+  wrong: L`你记得先算乘方，这一点是对的。问题在负号：你让它也跟着一起平方了。
+我们放慢一点，先只看这一个：\(-4^2\) 里，平方管的是 4，还是 \(-4\)？
+你先回答这一个，我们再往下走。
+【记录】{"kind":"gap","tag":"E-pow-neg-paren","point":"乘方前面的负号","note":"讲完以后当场练习，负号还是跟着一起平方了"}`,
+};
+const OTHER = '我先弄清楚你卡在哪。你说说看，这道题你算到哪一步开始觉得不对劲？\n可以一步一步说给我听，也可以把你写的过程拍给我。';
+const PHOTO = '这道题我看到了。先别急着要答案，我想先听听你的想法。\n你打算第一步做什么？为什么这样做？';
+
+const textOf = m => {
+  if (!m) return '';
+  if (typeof m.content === 'string') return m.content;
+  return Array.isArray(m.content) ? m.content.map(p => (p && p.type === 'text' ? String(p.text || '') : '')).join('\n') : '';
+};
+const hasImage = m => !!m && Array.isArray(m.content) && m.content.some(p => p && p.type === 'image_url');
+const isProbe = t => /主动开启/.test(t);
+const isContext = t => /讲完一道错题/.test(t);
+
+// which mock problem a conversation is about; null when none of them is named
+function topicIn(text) {
+  const t = String(text ?? '').replace(/\s+/g, '');
+  for (const [topic, re] of SIGNS) if (re.test(t)) return topic;
+  if (/平方|乘方|负三|[-−]3²/.test(t)) return 'powers';
+  return null;
+}
+
+function probeReply(text) {
+  const name = (String(text).match(/弄清这个点：(.+?)。/) || [])[1] || '最近学的内容';
+  const evidence = (String(text).match(/你看到的证据：(.+?)。/) || [])[1] || '';
+  const seen = evidence ? `我翻了一下你最近的本子：${evidence}。` : '最近这类题有几道没做对。';
+  const ask = /乘方|平方|负号/.test(name)
+    ? L`先不急着算。你说说看：\(-3^2\) 里，被平方的是谁？是 3，还是 \(-3\)？`
+    : '先不急着算。你挑一道这样的题，说说你第一步会做什么，为什么这样做？';
+  return `Emma，你好。想和你聊 3 分钟：${name}。\n${seen}我想先听听你是怎么想的，不是考试，说错了也没关系。\n${ask}`;
+}
+
+function problemReply(topic) {
+  return `好，我们接着刚才那道题说。我先弄清楚你卡在哪一步。\n${MORE[topic].hint1.q}\n你说说你的想法，说错了也没关系。`;
+}
+
+// “还是不懂” on the other mock problems: a different picture, not the same words again (teacher.js rule 4)
+const RETRY = {
+  order: L`没关系，我换个说法。
+把 \(\div 2\) 换成 \(\times\frac{1}{2}\)，整道题就只剩乘法了：\(-6\times\frac{1}{2}\times\frac{1}{3}\)。
+只有乘法时，从左往右一个一个乘：\(-6\times\frac{1}{2}=-3\)，\(-3\times\frac{1}{3}=-1\)。
+你用这个办法试试 \(12\div 3\times 2\)，先说说你会把它改成什么样？`,
+  brackets: L`没关系，我换个说法。
+把 \(-2(a-3b)\) 想成：\(-2\) 要和括号里的每一个人握手，\(a\) 一个，\(-3b\) 一个。
+和 \(a\) 握手得 \(-2a\)；和 \(-3b\) 握手，两个负号碰在一起，负负得正，得 \(+6b\)。
+你来试一下：\(-3(x-2)\) 要和括号里的谁握手？各得多少？`,
+  equation: L`没关系，我换个说法。
+把方程想成一架天平，左边和右边一样重。
+去分母就是把两边都放大 6 倍。左边每一项放大了，右边的 1 也得放大，变成 6，天平才不会歪。
+你来说说：\(\frac{x}{2}-1=\frac{x}{3}\) 两边乘 6 以后，\(-1\) 变成多少？`,
+  geometry: L`没关系，我换个说法。
+拿一把尺子，A 放在 0，B 放在 10。C 离 B 有 4 cm，尺子上哪些位置离 10 正好 4 格？
+一个是 6，一个是 14。所以 AC 可能是 6，也可能是 14。
+你接着算：这两种情况下，AM 各是多少？`,
+};
+
+// free / retry / example / quiz for the other mock problems, from the explanation bank
+function topicReply(kind, topic) {
+  const b = BANK[topic], m = MORE[topic];
+  if (kind === 'free') return `${b.explain[1]}\n${b.explain[2]}\n你来试一道，看看是不是想通了。\n${hidden('练习', practiceOf(m.twin))}\n${note('gap', topic, b.why)}`;
+  if (kind === 'retry') return `${RETRY[topic]}\n${note('gap', topic, '第一种讲法以后她还是不懂，换了讲法')}`;
+  if (kind === 'example') return `好，看这一道，我一步一步写：\n${b.steps.map(s => '- ' + s).slice(0, 4).join('\n')}\n你说说看，哪一步和你原来想的不一样？`;
+  if (kind === 'quiz') return `好，来一道。只考刚才说的那一点：${b.remember}\n${hidden('练习', practiceOf(m.variants[0]))}`;
+  return POWERS[kind];
+}
+
+export function mockChat({ messages = [], mockCase = '' } = {}) {
+  const list = Array.isArray(messages) ? messages : [];
+  const users = list.filter(m => m && m.role === 'user');
+  const last = users[users.length - 1];
+  const lastText = textOf(last);
+  const all = list.map(textOf).join('\n');
+  const context = users.map(textOf).find(isContext) || '';
+  const topic = topicIn(context) || topicIn(all) || 'powers';
+  const pick = kind => (topic === 'powers' ? POWERS[kind] : topicReply(kind, topic));
+  const c = String(mockCase || '');
+  if (CHAT_CASES.includes(c)) {
+    if (c === 'probe') return probeReply('弄清这个点：乘方前面的负号。你看到的证据：10-22 作业 −3² 写成 9；10-23 复习 −2⁴ 写成 16。');
+    if (c === 'problem') return problemReply(topic);
+    if (c === 'photo') return PHOTO;
+    if (c === 'other') return OTHER;
+    return pick(c);
+  }
+  if (isProbe(lastText) && users.length === 1) return probeReply(lastText);
+  const assistants = list.filter(m => m && m.role === 'assistant').length;
+  if (context && assistants === 0 && (users.length > 1 || lastText.replace(context, '').trim() === '')) return problemReply(topic);
+  // her own words in the last turn (the hidden context may share a turn with her question)
+  const said = lastText.replace(context, '').trim();
+  if (/还是不懂|没懂|不明白|听不懂|不太懂/.test(said)) return pick('retry');
+  if (/例子/.test(said)) return pick('example');
+  if (/出一道题|考考我|再来一道/.test(said)) return pick('quiz');
+  if (/答案|我做|我写|我算|算出/.test(said)) return /不对|错/.test(said) ? POWERS.wrong : POWERS.right;
+  if (/^(懂了|明白了|会了|知道了)/.test(said)) return POWERS.gotit;
+  if (context && assistants === 0) return problemReply(topic);
+  const asked = topicIn(said);
+  if (asked) return asked === 'powers' ? POWERS.free : topicReply('free', asked);
+  if (hasImage(last)) return PHOTO;
+  return OTHER;
 }

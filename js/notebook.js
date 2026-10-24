@@ -80,7 +80,19 @@ export function reviewPlan(card) {
 
 export function recordReview(card, { results = [], today = dayOf() } = {}) {
   const c = structuredClone(card);
-  const passed = results.length > 0 && results.every(r => r.ok && r.firstTry !== false && !r.hints);
+  // Redoing the original only counts when it goes wrong: a right redo may be a remembered answer (DESIGN 冲突表),
+  // so passing needs at least one new problem right on the first try without a hint.
+  const fresh = results.filter(r => r.kind !== 'redo');
+  const redoOk = results.filter(r => r.kind === 'redo').every(r => r.ok);
+  const firstTryOk = r => r.ok && r.firstTry !== false && !r.hints;
+  if (!fresh.length && results.length && redoOk) {
+    // only the original was done (no new problem was ready): keep the stage, look again tomorrow
+    c.reviews.push({ day: today, passed: false, held: true, results });
+    for (const r of results) if (r.q) c.used.push(r.q);
+    c.due = addDays(today, 1);
+    return c;
+  }
+  const passed = fresh.length > 0 && fresh.every(firstTryOk) && redoOk;
   c.reviews.push({ day: today, passed, results });
   for (const r of results) if (r.q) c.used.push(r.q);
   // 轻卡：做对了就休息到考前；没做对说明不只是一时手滑，变成正常卡从第 1 档练（C 4.4）

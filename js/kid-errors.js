@@ -5,9 +5,10 @@
 //
 // 导出
 //   KID_COPY                         { code: 中文一句 }，code 来自 ai.js 的 AIError.code，'unclear' / 'ungraded' 由看照片的流程给
-//   WHERE_COPY                       按地方换说法：{ photo: {...}, explain: {...}, practice: {...}, hint: {...} }
+//   WHERE_COPY                       按地方换说法：{ photo, explain, practice, hint, chat（v0.3 问我）, listen（v0.3 语音转文字） }
 //   kidMessage(err, { where }) -> string   给孩子看的一句。err 是 AIError、带 code 的对象或 code 字符串；
-//                                    where：'photo' 看照片 | 'explain' 讲题 | 'practice' 练变式题 | 'hint' 要提示；'abort' 返回 ''
+//                                    where：'photo' 看照片 | 'explain' 讲题 | 'practice' 练变式题 | 'hint' 要提示 |
+//                                    'chat' 问我 | 'listen' 语音转文字；'abort' 返回 ''
 //   needsParent(err) -> bool         这个错要家长处理（地址、Key、积分、模型）：界面显示“告诉家长”，不显示“再试一次”
 //   canRetry(err) -> bool            “再试一次”有意义（网络、超时、忙、没讲完）
 //   parentDetail(err) -> string      原来的技术说明（err.message），只在家长区显示
@@ -71,6 +72,26 @@ export const WHERE_COPY = {
     incomplete: '新题没出好，先练错题本里的原题。',
     empty: '新题没出好，先练错题本里的原题。',
     'budget-day': '今天的老师额度用完了，先练错题本里的原题。',
+  },
+  // v0.3 问我（自由问答）：没说完就再说一遍，不提“讲题”
+  chat: {
+    truncated: '我刚才没说完，再试一次。',
+    incomplete: '我刚才没说完，再试一次。',
+    empty: '我刚才没说完，再试一次。',
+    timeout: '网有点慢，我没听到回音，再试一次。',
+    'budget-day': '今天的老师额度用完了，明天再问我。错题本里的题还能接着练。',
+  },
+  // v0.3 语音转文字：没听清时可以再说一遍，也可以打字
+  listen: {
+    network: '没听清，网连不上。可以打字问我。',
+    offline: '现在没连网，可以先把问题打出来。',
+    timeout: '网有点慢，没听清。再说一次，或者打字。',
+    ratelimit: '我这会儿有点忙，没听清。可以打字问我。',
+    server: '我这会儿有点忙，没听清。可以打字问我。',
+    truncated: '没听清，再说一次，或者打字。',
+    incomplete: '没听清，再说一次，或者打字。',
+    empty: '没听清，再说一次，或者打字。',
+    http: '没听清，再说一次，或者打字。',
   },
   // 要提示：没有提示也能接着想，或者看讲解
   hint: {

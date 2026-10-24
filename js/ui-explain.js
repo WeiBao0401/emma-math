@@ -121,6 +121,7 @@ export const COPY = {
   tomorrowLight: '明天：再做一道新题。',
   tomorrowRetell: '明天换个讲法再来，把原题再做一遍。',
   nextOne: '下一道',
+  askMe: '还有不明白的？问我',
   stop: '今天先到这儿',
   backToPage: '回到这一页',
   retry: '再试一次',
@@ -1175,12 +1176,20 @@ export function createExplain(ctx) {
     } else {
       buttons = [h('button', { type: 'button', className: 'btn', text: COPY.stop, on: { click: () => stopToday(c) } })];
     }
+    // v0.3：讲完还有不明白的，接着问老师（chat problem 模式带上这道题和诊断：同坑合并时卡上存的是第一道题，所以直接传刚讲的这道）。
+    // 诊断拿不准、她说“这题有问题”的不接（CONTRACTS 9）
+    const r = st.result || {};
+    const askMe = st.cardId && r.ask !== 'unsure' && r.ask !== 'flagged'
+      ? h('div', { className: 'ex-askme' }, h('button', { type: 'button', className: 'text-btn accent', on: { click: () => ctx.go('chat', { mode: 'problem', cardId: st.cardId, problem: c.problem, diagnosis: st.diagnosis || null }) } },
+        icon('chat'), h('span', { text: COPY.askMe })))
+      : null;
     return [
       noteEl(st.note),
       h('div', { className: 'ex-done reveal' },
         h('h1', { className: 'ex-done-title', text: v.title }),
         v.lines.map(t => h('p', { className: 'ex-done-line', text: t }))),
       h('div', { className: 'btn-row' }, buttons),
+      askMe,
     ];
   }
 

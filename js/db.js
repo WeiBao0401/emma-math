@@ -293,11 +293,16 @@ export function exportFileName(d = new Date()) {
   return `emmamath-backup-${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}.json`;
 }
 
-// The Poe key stays on this iPad: it is never written to a file, and never taken from one.
+// The Poe key stays on this iPad: it is never written to a file, and never taken from one. The same for the Doubao
+// voice access key (v0.3, settings.doubao.accessKey); its App ID is not a secret and travels with the backup.
 function withoutKey(rec) {
-  if (!rec || rec.key !== 'settings' || !isPlainObject(rec.value) || !('poeKey' in rec.value)) return rec;
+  if (!rec || rec.key !== 'settings' || !isPlainObject(rec.value)) return rec;
+  const d = rec.value.doubao;
+  const hasDoubaoKey = isPlainObject(d) && 'accessKey' in d;
+  if (!('poeKey' in rec.value) && !hasDoubaoKey) return rec;
   const value = { ...rec.value };
   delete value.poeKey;
+  if (hasDoubaoKey) { value.doubao = { ...d }; delete value.doubao.accessKey; }
   return { ...rec, value };
 }
 
@@ -467,7 +472,14 @@ export async function openStore({
       if (replace) {
         const localSettings = await run('kv', 'readonly', s => reqResult(s.kv.get('settings')));
         const localKey = localSettings && isPlainObject(localSettings.value) ? localSettings.value.poeKey : undefined;
-        const kv = kvIn.map(r => (r.key === 'settings' && localKey && isPlainObject(r.value) ? { ...r, value: { ...r.value, poeKey: localKey } } : r));
+        const localDoubao = localSettings && isPlainObject(localSettings.value) && isPlainObject(localSettings.value.doubao) ? localSettings.value.doubao.accessKey : undefined;
+        const kv = kvIn.map(r => {
+          if (r.key !== 'settings' || !isPlainObject(r.value)) return r;
+          const value = { ...r.value };
+          if (localKey) value.poeKey = localKey;
+          if (localDoubao) value.doubao = { ...(isPlainObject(value.doubao) ? value.doubao : {}), accessKey: localDoubao };
+          return { ...r, value };
+        });
         // a file without settings keeps the iPad's settings (and so its key)
         if (touches.kv && localSettings && !kv.some(r => r.key === 'settings')) kv.push(localSettings);
         write = { photos, items, attempts, kv };

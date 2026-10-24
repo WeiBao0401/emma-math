@@ -34,6 +34,11 @@ export const bookName = kv => {
   const n = kv && typeof kv.peek === 'function' ? kv.peek('bookName', '') : '';
   return typeof n === 'string' && n.trim() ? n.trim() : DEFAULT_BOOK_NAME;
 };
+// 问老师的卡里，只有“讲完还是不太懂”的可以接着问私人老师（诊断本身是可靠的）
+export const askConfused = card => {
+  const r = card && card.askTeacher && typeof card.askTeacher === 'object' ? card.askTeacher.reason : '';
+  return !!card && card.status === 'ask' && (r === 'confused' || r === 'still-lost');
+};
 export const pendingList = kv => {
   const p = kv && typeof kv.peek === 'function' ? kv.peek('pending', []) : [];
   return Array.isArray(p) ? p.filter(x => x && x.photoId != null) : [];
@@ -386,12 +391,22 @@ export function createCard(ctx) {
     } else if (card && !ask) {
       barInner.replaceChildren(h('div', { className: 'book-bar-btns' },
         h('button', { type: 'button', className: 'btn', text: '我会了，考考我', on: { click: () => ctx.go('practice', { cardId: card.id }) } }),
+        askMeBtn(),
         h('button', { type: 'button', className: 'text-btn', text: '这题有问题', on: { click: () => { confirming = true; renderBar(); } } })));
+    } else if (card && askConfused(card)) {
+      // 讲完还是不太懂的题：诊断是可靠的，可以接着问老师（拿不准的、她点了“这题有问题”的不接）
+      barInner.replaceChildren(h('div', { className: 'book-bar-btns' }, askMeBtn()));
     } else {
       barInner.replaceChildren();
     }
     bar.hidden = !barInner.childElementCount;
     document.body.classList.toggle('has-bar', !bar.hidden);
+  }
+
+  // v0.3：这道题还有不明白的，问老师（chat problem 模式带上这道题和当时的诊断）
+  function askMeBtn() {
+    return h('button', { type: 'button', className: 'text-btn accent book-askme', on: { click: () => ctx.go('chat', { mode: 'problem', cardId: card.id }) } },
+      icon('chat'), h('span', { text: '问我' }));
   }
 
   async function doFlag() {

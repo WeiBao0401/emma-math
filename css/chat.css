@@ -1,0 +1,91 @@
+/* 问我：私人老师的对话（ui-chat.js）。负责：接线的人（v0.3）。类名以 chat- 开头；颜色、字、按钮用 base.css 的 token。
+   老师的话不放气泡，像老师在本子上写给她的：衬线、行距宽、一行一段；她的话靠右，浅绿底。
+   底部输入条固定：拍题、输入框、说话、发送；录音时换成音量条和“说完了”。 */
+.chat-page{padding-bottom:calc(var(--bar) + 140px)}
+.chat-title{margin-bottom:4px}
+
+.chat-about{margin-top:16px;padding:12px 16px;border:1px solid var(--rule);border-radius:8px}
+.chat-about-q{margin-top:6px;font:400 18px/1.6 var(--serif)}
+.chat-about .small{margin-top:4px}
+
+.chat-list{display:flex;flex-direction:column;gap:20px;margin-top:20px}
+.chat-list>.sk-bars{max-width:420px}
+.chat-msg{max-width:100%}
+.chat-msg.t .chat-text{font:400 19px/1.75 var(--serif);color:var(--ink);text-wrap:pretty}
+.chat-msg.t.local .chat-text{color:var(--muted)}
+.chat-text p+p,.chat-text p+ul,.chat-text p+ol,.chat-text ul+p,.chat-text ol+p{margin-top:8px}
+.chat-text ul,.chat-text ol{margin-top:6px;display:grid;gap:4px}
+.chat-text li{position:relative;padding-left:1.1em}
+.chat-text ul>li::before{content:"";position:absolute;left:.2em;top:.8em;width:.32em;height:.32em;border-radius:50%;background:var(--accent)}
+.chat-text ol{counter-reset:li}
+.chat-text ol>li{counter-increment:li;padding-left:1.5em}
+.chat-text ol>li::before{content:counter(li) ".";position:absolute;left:0;color:var(--accent);font-variant-numeric:tabular-nums}
+.chat-msg.me{align-self:flex-end;max-width:min(80%,520px);background:var(--tag-bg);border-radius:16px 16px 4px 16px;padding:10px 16px}
+.chat-msg.me .chat-text{font:17px/1.55 var(--sans);white-space:pre-wrap;overflow-wrap:anywhere}
+.chat-img{display:block;max-width:100%;max-height:260px;border-radius:8px;margin-bottom:8px}
+.chat-img:only-child{margin-bottom:0}
+.chat-thinking{font-size:16px}
+
+.chat-after{display:flex;flex-direction:column;gap:16px;margin-top:18px}
+.chat-after:empty{display:none}
+.chat-quick{display:flex;flex-wrap:wrap;gap:10px}
+.chat-chip{min-height:44px;padding:0 16px;border:1px solid var(--rule-strong);border-radius:999px;color:var(--ink);font:16px/1.2 var(--sans);background:var(--paper)}
+.chat-chip:active{background:var(--tag-bg)}
+.chat-partial{display:flex;align-items:center;gap:16px}
+.chat-error .btn-row{margin-top:4px}
+
+/* 当场练：一道题、小键盘、对错 */
+.chat-practice{padding:14px 16px 16px;border-left:3px solid var(--accent);background:color-mix(in srgb,var(--tag-bg) 55%,var(--paper));border-radius:0 8px 8px 0}
+.chat-pq{margin-top:6px;font:500 20px/1.6 var(--serif)}
+.chat-kp{margin-top:12px}
+.chat-paper .btn-row{margin-top:8px}
+.chat-paper p{margin-top:8px;font-size:18px}
+.chat-pres{margin-top:8px;font-size:17px}
+.chat-pres.ok .chat-mark{color:var(--good);font-weight:600}
+.chat-pres.no .chat-mark{color:var(--muted)}
+.chat-practice.past{margin-top:12px;padding:10px 14px 12px}
+.chat-practice.past .chat-pq{font-size:18px}
+.chat-practice.done{opacity:.9}
+
+/* 以前聊过的 */
+.chat-past{margin-top:20px}
+.chat-past ul{margin-top:6px}
+.chat-past-row{display:flex;align-items:center;gap:12px;width:100%;min-height:52px;border-bottom:1px solid var(--rule);text-align:left}
+.chat-past-t{flex:1;min-width:0;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chat-past-row .icon{width:18px;height:18px;color:var(--faint)}
+
+/* 底部输入条 */
+.chat-bar .inner{display:flex;flex-direction:column;gap:8px}
+.chat-input-row{display:flex;align-items:flex-end;gap:6px}
+.chat-input{flex:1;min-width:0;min-height:44px;max-height:160px;resize:none;border:1px solid var(--rule-strong);border-radius:22px;padding:10px 16px;
+  font:17px/1.4 var(--sans);background:var(--paper);color:var(--ink);outline:none;-webkit-appearance:none;appearance:none}
+.chat-input:focus{border-color:var(--accent)}
+.chat-input::placeholder{color:var(--faint)}
+.chat-icon-btn{flex:none;display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:50%;color:var(--muted)}
+.chat-icon-btn:active{background:var(--tag-bg)}
+.chat-icon-btn:disabled{opacity:.35}
+.chat-send{flex:none;display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:50%;background:var(--btn-bg);color:var(--btn-ink)}
+.chat-send:disabled{opacity:.3}
+.chat-photo-row{display:flex;align-items:center;gap:8px}
+.chat-photo-prev{height:64px;max-width:120px;object-fit:cover;border-radius:6px;border:1px solid var(--rule)}
+.chat-hear{padding:0 4px}
+
+.chat-rec{display:flex;align-items:center;gap:12px;min-height:52px;flex-wrap:wrap}
+.chat-rec-dot{width:10px;height:10px;border-radius:50%;background:var(--danger);animation:chat-pulse 1.2s ease-in-out infinite}
+.chat-level{display:inline-flex;align-items:center;gap:3px;height:28px}
+.chat-level i{display:block;width:4px;height:28px;border-radius:2px;background:var(--accent);transform:scaleY(.15);transform-origin:center;transition:transform .08s linear}
+.chat-rec-time{font-size:15px;color:var(--muted)}
+.chat-rec-msg{flex:1;min-width:8em}
+.chat-rec-btns{display:flex;align-items:center;gap:18px;margin-left:auto}
+.chat-rec-stop{min-height:44px;padding:0 18px}
+@keyframes chat-pulse{0%,100%{opacity:1}50%{opacity:.35}}
+@media (prefers-reduced-motion: reduce){.chat-rec-dot{animation:none}.chat-level i{transition:none}}
+
+@media (min-width:700px){
+  .chat-msg.t .chat-text{font-size:20px}
+  .chat-pq{font-size:22px}
+}
+@media (max-width:420px){
+  .chat-msg.t .chat-text{font-size:18px}
+  .chat-rec-msg{display:none}
+}

@@ -119,3 +119,6 @@ button.ex-line:disabled{cursor:default}
   .ex-done-title{font-size:34px}
   .ex-remember-t{font-size:27px}
 }
+/* v0.3：讲完最后一屏的“还有不明白的？问我” */
+.ex-askme{margin-top:28px;padding-top:16px;border-top:1px solid var(--rule)}
+.ex-askme .text-btn{margin:0 -10px;font-size:16px;display:inline-flex;align-items:center;gap:8px}

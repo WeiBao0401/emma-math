@@ -12,11 +12,13 @@
 //   DEFAULT_MODEL_PARAMS                   不在表里的模型带什么（只关联网搜索）
 //   PRICES_USD, FALLBACK_PRICE_USD         美元 / 百万 token [输入, 输出]
 //   RETRY_DELAYS, MAX_TOKENS_CAP, MOCK_DELAY_MS, RECENT_CAP
-//   DEFAULT_SETTINGS                       { poeUrl, poeKey, taskModels, dailyCapUSD, mock }
+//   MOCK_STREAM_MS, MOCK_LISTEN_MS         模拟模式：聊天每一小段间隔 40 毫秒；语音转写等 800 毫秒
+//   ASR_OPTIONS, DOUBAO_ASR               语音转写走哪家（v0.3，CONTRACTS 16）；豆包接口的地址和资源 ID（未验证）
+//   DEFAULT_SETTINGS                       { poeUrl, poeKey, taskModels, dailyCapUSD, mock, asr, doubao }
 //
 // 依赖：无。只放常量，不放 Key、本机路径、学生数据（web/ 是公开仓库）。
 
-export const VERSION = '0.2.2';
+export const VERSION = '0.3.0';
 export const APP_NAME = 'Emma 的数学老师';
 export const DB_NAME = 'emmamath', DB_VERSION = 1;
 export const LS_PREFIX = 'emmamath.';
@@ -39,9 +41,15 @@ export const TASKS = {
   solve:     { model: 'gemini-3.1-pro',    maxTokens: 4000, timeoutMs: 60000, fallback: '' },  // 独立再做一遍，用来核对（另一家）
   hint:      { model: 'claude-sonnet-5.5', maxTokens: 3000, timeoutMs: 60000, fallback: 'gemini-3.8-flash' },
   reflect:   { model: 'claude-opus-4.8',   maxTokens: 8000, timeoutMs: 180000, fallback: 'claude-sonnet-5.5' },
+  // v0.3 私人老师（design/teacher-chat.md）。chat 是流式的自由对话：timeoutMs 按“多久没收到新数据”算，不是总时长。
+  // gpt-5.4 的 max_tokens 含看不见的推理，2500 够讲 3 到 6 句再出一道题。
+  chat:      { model: 'gpt-5.4',           maxTokens: 2500, timeoutMs: 90000, fallback: 'claude-sonnet-5.5' },
+  // listen：把她说的话转成文字（Poe 的 file 写法，实测 gemini-3.1-pro 7-9 秒逐字转对）。别家模型收不了录音，所以没有备用
+  listen:    { model: 'gemini-3.1-pro',    maxTokens: 1000, timeoutMs: 60000, fallback: '' },
 };
 export const TASK_LABELS = {
   recognize: '看照片', explain: '讲错题', variants: '出变式题', solve: '独立核对', hint: '提示', reflect: '每周小结',
+  chat: '自由问答', listen: '听写语音',
 };
 
 // Poe parameters per model. Web search is always off: Gemini has it on by default, about 1900 points a search.
@@ -51,7 +59,8 @@ export const MODEL_PARAMS = {
   'claude-sonnet-5.5': { web_search: false, effort: 'medium' },
   'claude-haiku-5.5': { web_search: false, effort: 'medium' },
   'claude-opus-4.8': { web_search: false, output_effort: 'medium' },
-  'gpt-5.4': { web_search: false, reasoning_effort: 'low' },
+  // 10-24 晚实测流式：medium 第一个字 3.6 秒、讲完约 7 秒，low 反而 6 秒才出第一个字；verbosity low 让它少说废话
+  'gpt-5.4': { web_search: false, reasoning_effort: 'medium', verbosity: 'low' },
 };
 // A model typed in by the parent that is not in the table: still no web search (all six bake-off models took it).
 export const DEFAULT_MODEL_PARAMS = { web_search: false };
@@ -67,7 +76,22 @@ export const RETRY_DELAYS = [1500, 3000];
 export const MAX_TOKENS_CAP = 12000;
 export const MOCK_DELAY_MS = [300, 900];
 export const RECENT_CAP = 50;
+export const MOCK_STREAM_MS = 40;
+export const MOCK_LISTEN_MS = 800;
+
+// 语音转写：'poe'（默认，走上面的 listen 任务）| 'doubao'（火山引擎豆包，Wei 给 Key 以后在家长区切过去；失败自动退回 poe）
+export const ASR_OPTIONS = ['poe', 'doubao'];
+// 豆包“大模型录音文件识别极速版”。未验证：等 Wei 给 App ID 和 Access Key 实测（voice.js）。resourceId 可以在
+// settings.doubao.resourceId 里改，不用改代码
+export const DOUBAO_ASR = {
+  url: 'https://openspeech.bytedance.com/api/v3/auc/bigmodel/recognize/flash',
+  resourceId: 'volc.bigasr.auc_turbo',
+  timeoutMs: 30000,
+};
 
 // taskModels: { task: model } the parent changed; a task not in it uses TASKS[task].model.
 // dailyCapUSD: budget.js stops paid calls once today's estimate reaches it (0 stops them all).
-export const DEFAULT_SETTINGS = { poeUrl: '', poeKey: '', taskModels: {}, dailyCapUSD: 0.4, mock: false };
+// asr: who turns her voice into text ('poe' | 'doubao'); doubao: { appId, accessKey } from the Volcengine console
+// (resourceId optional). Both only matter for voice.js.
+export const DEFAULT_SETTINGS = { poeUrl: '', poeKey: '', taskModels: {}, dailyCapUSD: 0.4, mock: false,
+  asr: 'poe', doubao: { appId: '', accessKey: '' } };
