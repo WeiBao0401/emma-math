@@ -517,8 +517,10 @@ export function createCapture(ctx) {
     try {
       const p = await prepare(f, { maxSide: 1600 });
       if (my !== gen || !open) return;
-      preview = p;
-      stage = 'mask';
+      // Wei 10-24：不用遮名字，拍完直接给老师看（遮名字那一屏的代码还在，只是不再进去）
+      shot = p; preview = null; file = null;
+      read();
+      return;
     } catch (e) {
       if (my !== gen || !open) return;
       console.warn('prepare', e);
@@ -959,7 +961,6 @@ export function createPage(ctx) {
       h('div', { className: 'page cap-page cap-pagelist' },
         h('h1', { className: 'page-title', text: COPY.pageTitle }),
         h('p', { className: 'cap-sub', text: COPY.pageSub(photo.source) }),
-        photo.page.personal ? h('p', { className: 'status-line cap-note' }, icon('info'), h('span', { text: COPY.personal })) : null,
         allDone ? h('p', { className: 'cap-lede', text: COPY.allDone }) : null,
         h('ul', { className: 'cap-plist' }, rows),
         anyUnpicked ? h('p', { className: 'small cap-missed', text: wrongProblems(photo.page).length ? COPY.missed : COPY.noWrong }) : null,
