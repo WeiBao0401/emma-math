@@ -24,7 +24,9 @@
 //     greeting(hour, name) -> '晚上好，Emma。'            dateLine(date) -> '10 月 24 日 星期六'
 //     withNumbers(text) -> 节点数组：数字包进 <span class="n">（只在浏览器里用）
 //
-// 用到的 ctx：store.all('items')、store.byIndex('attempts', 'at', 今天零点起)、kv（peek）、curriculum、today()、budget.canSpend()、settings()、mockForced()、go。
+// 用到的 ctx：store.all('items')、store.byIndex('attempts', 'at', 今天零点起)、kv（peek）、curriculum、today()、budget.canSpend()、settings()、mockForced()、go；
+//   老师的笔记本另用 ai.ask('reflect')（notes.runReflect）。
+//   homeProbe({ note, profile, today, probeDay, talked }) -> 小卡聊的点 | null   先看笔记的 focus，再看学情档案（v0.5）
 // 样式在 css/home.css，类名以 home- 开头（base.css 里占位首页的 .home-main、.home-title、.home-lede、.screen 不用）。
 //
 // v1 期中季（DESIGN 2.4、4.9，notebook.examPlan）：家长区填了考试日期时，招呼下面一行安静的提示（examPlan 的 note）：
@@ -39,19 +41,44 @@
 //   homePlan 多了 paperDone 参数，返回值多了 light（21:00 以后或考前两天）和 exam（examPlan 的结果）。
 //   kv 'examPaper' { exam, done }（错题卷那边写；没有就当不知道）：卷子没做完时考前第 2 天还推错题卷（日历 A）。
 import { h, icon, dateCn } from './ui-dom.js';
-import { dayOf, addDays, due, reviewPlan, quotaFor, shortName, LATE_HOUR, examPlan, compressDue, wake } from './notebook.js';
+import { dayOf, addDays, due, reviewPlan, quotaFor, shortName, SHORT_NAMES, LATE_HOUR, examPlan, compressDue, wake } from './notebook.js';
 import { ROUTES } from './nav.js';
 import { kidMessage } from './kid-errors.js';
 import { relDay, pendingList, pendingLine, ASK_TITLE } from './ui-book.js';
 import { needsOnboard } from './ui-onboard.js';
 import { loadProfile, probePoint, probeLine } from './profile.js';
 import { paperState } from './paper.js';
+import { focusPoint } from './reflect.js';
+import { latestNote, runReflect, isMock as mockMode, NOTES_KEY } from './notes.js';
 
 // v0.3 私人老师（CONTRACTS 17）：首页多两样东西，放在复习和拍错题下面：
 //   老师主动找她：学情档案里最需要帮的那个点分数够高、今天还没聊过（kv 'probeDay'）时，一张小卡“想和你聊 3 分钟：…”，
 //     “好，聊聊”去 chat { mode: 'probe', point }，“今天先不”记下 probeDay，今天不再出
 //   “有问题，问我”：一直在，去 chat { mode: 'free' }
+// v0.5 老师的笔记本（CONTRACTS 20，notes.js）：
+//   小卡先看最新一篇笔记里“下周想和她聊的”（reflect.focusPoint），这篇写好以后已经聊过的点跳过；都没有再用学情档案
+//     （homeProbe）。卡上的名字用错因的短名（SHORT_NAMES），没有短名才用笔记里的说法；开场的问法（opener）带给老师
+//   首页显示时在后台调 notes.runReflect：到了该写的时候写一篇，不挡界面，不告诉她，写好了下次显示时用
 export const ASK_LABEL = '有问题，问我';
+
+// 首页小卡聊哪个点。note 是最新一篇笔记，talked 是这篇写好以后主动聊过的点（名字或错因 id）
+export function homeProbe({ note = null, profile = null, today = dayOf(), probeDay = '', talked = [] } = {}) {
+  const done = new Set((Array.isArray(talked) ? talked : []).map(x => String(x || '')).filter(Boolean));
+  const nameOf = f => (f.tag && SHORT_NAMES[f.tag]) || [...String(f.point || '')].slice(0, 16).join('');
+  const left = note && Array.isArray(note.focus)
+    ? note.focus.filter(f => f && !(f.tag && done.has(f.tag)) && !done.has(String(f.point || '')) && !done.has(nameOf(f))) : [];
+  const f = note ? focusPoint({ ...note, focus: left }, { today, probeDay }) : null;
+  if (f && f.name) {
+    const name = nameOf({ tag: f.tag, point: f.name });
+    const w = profile && Array.isArray(profile.weak) ? profile.weak.find(x => x && ((f.tag && x.tag === f.tag) || x.name === name)) : null;
+    // probeUser 用“；”把证据连起来：笔记里的句子去掉句末的句号
+    const evidence = [...new Set([...(f.evidence || []), ...((w && w.evidence) || [])].map(t => String(t || '').replace(/[。；;\s]+$/, '')).filter(Boolean))].slice(0, 3);
+    const out = { tag: f.tag || (w && w.tag) || '', name, evidence, opener: f.opener || '', fromNote: true };
+    if (w) Object.assign(out, { learning: w.learning, stage: w.stage, wrong7: w.wrong7, score: w.score, ...(w.cardId ? { cardId: w.cardId } : {}) });
+    return out;
+  }
+  return probePoint(profile, { today, probeDay });
+}
 
 // ---------------------------------------------------------------- 纯函数
 
@@ -270,7 +297,7 @@ export function greetingPick(profile, today = dayOf(), { cards = [], queue = [] 
       const e = readEvidence(t, today);
       if (!e) continue;
       if (!(fell.get(w.name) >= e.day)) fell.set(w.name, e.day);
-      const when = relDay(e.day, today);
+      const when = e.day === today ? '刚才' : relDay(e.day, today);   // 避免“今天那道…今天复习里”
       const what = e.q && cpLen(e.q) <= Q_MAX ? `${when}那道 ${e.q} 的题` : `${when}那道“${w.name}”的题`;
       if (e.self) { add(e.day, 3, `${what}，是你自己改对的。`); continue; }
       const hook = reviewHook(w, list, inQueue, today);
@@ -497,9 +524,29 @@ export function createHome(ctx) {
       const next = await loadProfile(ctx);
       if (mine !== token) return;
       prof = next;
-      probe = probePoint(next, { today: today(), probeDay: ctx.kv.peek('probeDay', '') });
+      const note = latestNote(ctx.kv.peek(NOTES_KEY, []), { mock: mockMode(ctx) });
+      probe = homeProbe({ note, profile: next, today: today(), probeDay: ctx.kv.peek('probeDay', ''), talked: talkedSince(note) });
       render();
     } catch (e) { console.warn('home profile:', (e && e.message) || e); }
+    // 老师的笔记本：该写的时候在后台写一篇（约半分钟），不挡界面、不提示她；失败就算了，明天再试
+    if (mine === token) runReflect(ctx).catch(e => console.warn('reflect:', (e && e.code) || '', (e && e.message) || e));
+  }
+
+  // 这篇笔记写好以后，老师主动找她聊过的点（kv 'chats' 里 probe 的那几段，读 chat:<id> 的 point）
+  function talkedSince(note) {
+    if (!note) return [];
+    const since = String(note.at || note.day || '');
+    const out = [];
+    try {
+      for (const x of ctx.kv.peek('chats', []) || []) {
+        if (!x || x.mode !== 'probe' || String(x.at || '') < since) continue;
+        const c = ctx.kv.peek('chat:' + x.id, null);
+        const p = c && c.point;
+        if (p) out.push(p.name, p.tag);
+        if (c && c.tag) out.push(c.tag);
+      }
+    } catch (e) { console.warn('home talked:', (e && e.message) || e); }
+    return out.filter(Boolean);
   }
 
   return {

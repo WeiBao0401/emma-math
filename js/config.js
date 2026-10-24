@@ -18,7 +18,7 @@
 //
 // 依赖：无。只放常量，不放 Key、本机路径、学生数据（web/ 是公开仓库）。
 
-export const VERSION = '0.4.0';
+export const VERSION = '0.5.0';
 export const APP_NAME = 'Emma 的数学老师';
 export const DB_NAME = 'emmamath', DB_VERSION = 1;
 export const LS_PREFIX = 'emmamath.';
@@ -48,7 +48,7 @@ export const TASKS = {
   listen:    { model: 'gemini-3.1-pro',    maxTokens: 1000, timeoutMs: 60000, fallback: '' },
 };
 export const TASK_LABELS = {
-  recognize: '看照片', explain: '讲错题', variants: '出变式题', solve: '独立核对', hint: '提示', reflect: '每周小结',
+  recognize: '看照片', explain: '讲错题', variants: '出变式题', solve: '独立核对', hint: '提示', reflect: '老师的笔记本',
   chat: '自由问答', listen: '听写语音',
 };
 

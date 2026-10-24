@@ -2,6 +2,8 @@
 // 门的代码还在（showGate 等），只是不再进去。
 // 里面放：连接（中转站地址、Poe Key、测一下连接）、花费（今天、本月、每天上限）、学习设置（进度锚点、考试日期和范围）、
 // 问老师和“这题有问题”两张清单（只读）、最近 50 次 AI 调用、每个任务用哪个模型、数据（备份、导入、存储、清除）、模拟模式。
+// v0.5 加“老师的笔记本”（notes.js、reflect.js）：最新一篇（稳了的、还没懂的、下周想和她聊的、和上次比、给家长的话）、
+// 往期按日期点开看、“现在写一篇”（notes.runReflect 带 force，约半分钟，出错显示 parentDetail）。模拟模式外不列模拟写的。
 // 负责：家长区 UI agent（ui-parent.js、css/parent.css、tests/parent.test.mjs）。写法照英语老师 App 的 ui-parent.js / ui-me.js。
 //
 // 导出
@@ -36,6 +38,7 @@ import { exportFileName, parseExportText, EXPORT_FORMAT, EXPORT_VERSION } from '
 import { RECOGNIZE_CASES } from './mock.js';
 import { loadCurriculum } from './curriculum.js';
 import { loadProfile } from './profile.js';
+import { runReflect, notesOf, NOTES_KEY } from './notes.js';
 
 // ---------------------------------------------------------------- 数字码（纯函数）
 
@@ -843,6 +846,73 @@ export function createParent(ctx) {
     ], '只读。老师每次和她对话都带着这份档案。');
   }
 
+  // ---------------------------------------------------------------- v0.5 老师的笔记本（reflect.js、notes.js）
+  // 每周一篇：老师回顾她这一周，写下哪些稳了、哪些还没懂（证据、猜她是怎么想的、打算怎么教）、下周想和她聊什么、
+  // 给家长的话。最新一篇默认展开；往期按日期列着，点开看；“现在写一篇”不看日子，约半分钟。
+  let reflecting = null;   // null | { busy: true } | { error }
+  let pastOpen = '';       // 往期里点开的那一篇（at，没有就 day）
+  openRows.add('note-latest');
+  const noteKey = n => String(n.at || n.day);
+  const myNotes = () => notesOf(peek(NOTES_KEY, []), { mock: mockOn() });
+  const noteCount = n => { const g = (n.gaps || []).length, k = (n.solid || []).length; return [g ? `还没懂 ${g} 个` : '', k ? `稳了 ${k} 个` : ''].filter(Boolean).join('，') || '没写出判断'; };
+  const noteLine = (k, v) => (v ? h('p', { className: 'small' }, h('b', { className: 'parent-note-k', text: k + '：' }), mathText(v)) : null);
+  function noteBody(n) {
+    const sec = (title, kids) => (kids.length ? [h('p', { className: 'parent-label', text: title }), ...kids] : []);
+    const item = (...kids) => h('div', { className: 'parent-note-item' }, ...kids.filter(Boolean));
+    return [
+      ...sec('稳了的', (n.solid || []).map(x => item(mathText(x.point, { tag: 'p', className: 'parent-q' }), noteLine('证据', x.evidence)))),
+      ...sec('还没懂的', (n.gaps || []).map(g => item(mathText(g.point, { tag: 'p', className: 'parent-q' }),
+        noteLine('证据', g.evidence), noteLine('我的猜测', g.why), noteLine('打算', g.plan),
+        g.tag ? h('p', { className: 'small parent-meta', text: g.tag }) : null))),
+      ...sec('下周想和她聊的', (n.focus || []).map(f => item(mathText(f.point, { tag: 'p', className: 'parent-q' }), noteLine('开场先问', f.opener)))),
+      ...sec('和上次比的变化', n.changed ? [mathText(n.changed, { tag: 'p', className: 'parent-note-parent' })] : []),
+      ...sec('给家长的话', n.parent ? [mathText(n.parent, { tag: 'p', className: 'parent-note-parent' })] : []),
+      h('p', { className: 'small parent-meta', text: [dateCn(n.day) + ' 写', n.model, n.mock ? '模拟模式' : ''].filter(Boolean).join(' · ') }),
+    ];
+  }
+  function pastPanel() {
+    const past = myNotes().slice(0, -1).reverse();
+    return [h('ul', { className: 'parent-list' }, ...past.map(n => {
+      const k = noteKey(n);
+      const open = pastOpen === k;
+      return h('li', { className: 'parent-item' + (open ? ' open' : '') }, h('div', { className: 'parent-item-body' },
+        h('button', { type: 'button', className: 'parent-note-date', 'aria-expanded': String(open), on: { click: () => { pastOpen = open ? '' : k; render(); } } },
+          h('span', { className: 'parent-q', text: dateCn(n.day) }), h('span', { className: 'small', text: noteCount(n) }), icon('chev', 'chev')),
+        ...(open ? noteBody(n) : [])));
+    }))];
+  }
+  async function writeNote() {
+    if (reflecting && reflecting.busy) return;
+    reflecting = { busy: true };
+    render();
+    try {
+      // 后台那一篇正在写时拿到的是它；它没写（不到日子）再手动写一次
+      let r = await runReflect(ctx, { force: true });
+      if (!r || r.status !== 'written') r = await runReflect(ctx, { force: true });
+      reflecting = null;
+      openRows.add('note-latest');
+      toast('写好了');
+    } catch (e) {
+      console.warn('reflect', e);
+      reflecting = { error: parentDetail(e) || errText(e) };
+    }
+    softRender();
+  }
+  function notesGroup() {
+    const all = myNotes();
+    const latest = all.length ? all[all.length - 1] : null;
+    const busy = !!(reflecting && reflecting.busy);
+    const status = busy ? h('div', { className: 'parent-after' }, h('p', { className: 'small dots', text: '老师在想，约半分钟' }))
+      : reflecting && reflecting.error ? h('div', { className: 'parent-after' }, h('p', { className: 'small parent-warn', text: '没写成：' + reflecting.error })) : null;
+    return group('老师的笔记本', [
+      latest ? row({ key: 'note-latest', label: '最新一篇', sub: noteCount(latest), value: dateCn(latest.day), panel: () => noteBody(latest) })
+        : row({ label: '还没有笔记', sub: '她做满 5 道题或聊过几次以后，打开首页时老师会在后台写第一篇。也可以现在写。' }),
+      all.length > 1 ? row({ key: 'note-past', label: '往期', value: `${all.length - 1} 篇`, panel: pastPanel }) : null,
+      row({ label: '现在写一篇', sub: `老师回顾这一周，约半分钟，约 0.04 美元（${modelFor('reflect', settings())}）`,
+        right: h('button', { type: 'button', className: 'text-btn accent', text: busy ? '在写' : '写一篇', disabled: busy, on: { click: writeNote } }), after: status }),
+    ], '每周一篇：离上一篇满 7 天、这期间作答和对话记录有 5 条以上时，打开首页就在后台写，她看不到。老师和她聊天、主动找她聊时都参考最新一篇。');
+  }
+
   // ---------------------------------------------------------------- v0.3 语音转文字（voice.js）
   function doubaoPanel() {
     const d = settings().doubao || {};
@@ -1207,6 +1277,7 @@ export function createParent(ctx) {
       moneyGroup(),
       studyGroup(),
       teacherGroup(),
+      notesGroup(),
       listsGroup(),
       recentGroup(),
       modelGroup(),

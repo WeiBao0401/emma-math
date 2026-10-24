@@ -121,3 +121,15 @@ button.parent-row-head:active{background:var(--tag-bg)}
 .parent-wipe-q{font:400 20px/1.4 var(--serif);color:var(--danger)}
 .parent-about{margin-top:48px}
 .parent-version{margin-top:16px}
+
+/* v0.5 老师的笔记本 */
+.parent-note-item{padding:10px 0;border-top:1px solid var(--rule)}
+.parent-label+.parent-note-item{border-top:0;padding-top:2px}
+.parent-note-item>*+*{margin-top:4px}
+.parent-note-k{font-weight:600;color:var(--ink)}
+.parent-note-parent{font:400 17px/1.6 var(--serif);color:var(--ink)}
+.parent-note-date{display:flex;align-items:center;gap:12px;width:100%;min-height:44px;padding:0;background:none;border:0;text-align:left;color:var(--ink)}
+.parent-note-date .parent-q{flex:none}
+.parent-note-date .small{flex:1;min-width:0;color:var(--muted)}
+.parent-note-date .chev{flex:none;width:16px;height:16px;color:var(--muted);transition:transform .2s var(--ease)}
+.parent-item.open .parent-note-date .chev{transform:rotate(90deg)}

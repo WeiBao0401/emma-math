@@ -46,7 +46,9 @@
 //   variants   { variants: [{ level: 同构 | 近变式 | 辨析 | 远变式, q, answer, answer_kind, form, unit, trap, trap_answer, steps }] }
 //   solve      { answer, answer_kind, form, unit, steps, unsure }：答的是发来的那道题（twin、变式题都认得）
 //   hint       { hint }
-//   reflect    { summary, strengths, focus, next }
+//   reflect    reflect.js 的形状（v0.5 老师的笔记本）：{ solid: [{ point, evidence }], gaps: [{ tag, point, why, evidence, plan }],
+//                focus: [{ tag, point, opener }], changed, parent }。内容是一份像样的周笔记：去括号稳了，−3² 和 (−3)²
+//                单独做对、并排就混，乘除顺序还要再看；不看发来的这一周（模拟模式下首页、家长区都能看到它）
 // answer 只写结果；answer_kind 是 mathcheck.js 的 kind（number | expr | equation | set | choice | compare | text），
 // 所以模拟模式下程序核对也能走通（测试检查每道题 mathcheck 算出来和 answer 一致）。
 // 依赖：无。
@@ -401,6 +403,30 @@ function solveOf(text, topic) {
   return { answer: m.answer, answer_kind: BANK[topic].answer_kind, form: '', unit: m.unit || '', steps: [...BANK[topic].steps], unsure: false };
 }
 
+// 一份模拟的老师笔记（reflect）。字数照 REFLECT_SYSTEM 的上限：evidence、why 60 字以内，plan 80，opener 40，parent 120
+const REFLECT = {
+  solid: [
+    { point: '去括号时括号前是负号，每一项都要变号', evidence: '讲完 −2(a−3b) 以后，隔了两天的复习和一道变式题都一次做对，没用提示。' },
+    { point: '带负数的加减', evidence: '这周 6 道带负数的加减都对了，其中 2 道是第一次见的新题。' },
+  ],
+  gaps: [
+    { tag: 'E-pow-neg-paren', point: '乘方前面的负号：−3² 和 (−3)²',
+      why: '她可能把“−3”整个当成底数，看到负号就想到“负负得正”，没先看平方管的是谁。',
+      evidence: '单独做 −3² 是对的；−3² 和 (−3)² 放在同一题里，两个都写成 9。聊天里她说“负负得正”。',
+      plan: '先不讲规则。请她把两个式子各写成乘法：−(3×3) 和 (−3)×(−3)，自己算出来，再说说差在哪。' },
+    { tag: 'E-div-order', point: '乘除混在一起要从左往右算',
+      why: '看到 ×⅓ 想先把 2×⅓ 凑成一组，像是觉得乘法比除法先算。证据还少，还看不准。',
+      evidence: '−6÷2×⅓ 写成 −9；复习时同类的 12÷4×3 用了第 2 级提示才做对。',
+      plan: '用 12÷2×3 这种小数字，请她按两种顺序各算一遍，再代回“从左往右”看哪个对。' },
+  ],
+  focus: [
+    { tag: 'E-pow-neg-paren', point: '乘方前面的负号', opener: '−3² 和 (−3)² 放在一起，你觉得它们一样吗？为什么？' },
+    { tag: 'E-div-order', point: '乘除从左往右', opener: '12÷2×3，你会先算哪一步？说说你的想法。' },
+  ],
+  changed: '上一篇说的“去括号要变号”这周稳了。新冒出来的是乘方：单独做能对，两个放在一起就混。',
+  parent: '这周她把“去括号要变号”练稳了，两次复习都一次做对。要留意的是 −3² 和 (−3)² 放在一起时容易混。在家可以请她讲讲这两个式子哪里不一样，听她说就好。',
+};
+
 export function mockAnswer(task, { text = '', images = [], mockCase = '' } = {}) {
   const c = String(mockCase || '');
   if (task === 'recognize') {
@@ -415,14 +441,7 @@ export function mockAnswer(task, { text = '', images = [], mockCase = '' } = {})
   if (task === 'variants') return copy({ variants: MORE[topic].variants.map(v => ({ form: '', unit: '', steps: ['（模拟）'], ...v })) });
   if (task === 'solve') return copy(solveOf(text, topic));
   if (task === 'hint') return copy({ hint: b.hints[0] });
-  if (task === 'reflect') {
-    return {
-      summary: '这周讲了 3 道错题，2 道已经会了。',
-      strengths: ['去括号时会先写出每一项再合并。'],
-      focus: [L`乘方的底数：\(-3^2\) 和 \((-3)^2\)。`],
-      next: ['下周先练 3 道乘方的变式题。'],
-    };
-  }
+  if (task === 'reflect') return copy(REFLECT);
   return {};
 }
 

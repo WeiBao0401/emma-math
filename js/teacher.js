@@ -55,7 +55,7 @@ export function probeUser(point = {}) {
   const name = point.name || point.point || '最近学的内容';
   const evidence = (point.evidence || []).slice(0, 3).join('；');
   return `（这一句是程序发的，她看不到。）请你主动开启一段 3 分钟左右的小对话，帮她弄清这个点：${name}。
-${evidence ? `你看到的证据：${evidence}。` : ''}
+${evidence ? `你看到的证据：${evidence}。` : ''}${point.opener ? `\n你在教学笔记里计划过开场这样问她：${point.opener}（可以用自己的话说）。` : ''}
 第一句打个招呼，用一两句话说为什么想和她聊这个（可以提证据，语气轻松，不像在检查）。然后问她一个能看出她怎么想的小问题，等她回答。这一条不要讲解，也不要出【练习】。`;
 }
 

@@ -6,7 +6,8 @@
 // 路由 chat，params：{ mode: 'free' | 'probe' | 'problem', point?, cardId?, chatId?, problem?, diagnosis?, fresh? }
 //   problem、diagnosis：讲题最后一屏传刚讲的那道（同坑合并时卡上存的是第一道）；fresh：不接着上一段，另开新的
 //   free     她自己问（首页“有问题，问我”）。30 分钟内问过，接着上一段聊；导航栏“新问题”另开一段
-//   probe    老师主动开场（首页小卡“想和你聊 3 分钟：…”）：probeUser(point) 隐藏发出，她只看到老师的话；记 kv 'probeDay'
+//   probe    老师主动开场（首页小卡“想和你聊 3 分钟：…”）：probeUser(point) 隐藏发出，她只看到老师的话；记 kv 'probeDay'。
+//            point 来自老师的笔记本时带 opener（笔记里计划的开场问法），probeUser 交给老师
 //   problem  讲完错题接着问（讲题最后一屏、卡详情“问我”）：problemContext 作为隐藏的上下文，接在她第一句前面
 //   chatId   打开以前的对话接着聊
 //
@@ -21,7 +22,9 @@
 //     practiceSetup(practice) -> { kind, options, letters, variable }   小键盘怎么出
 //     vetPractice(practice) -> { ok, computed }    程序能算的题再算一遍；算出来和老师写的答案不一样就不让她做，换一道
 //     answerTurn({ practice, given, result, self }) -> { display, content }   她交了答案以后发给老师的话（程序判的结果她看不到）
-//     systemFor({ profile, kv, curriculum, today }) -> teacherSystem(...) 的系统提示
+//     systemFor({ profile, kv, curriculum, today, mock, note }) -> teacherSystem(...) 的系统提示。profileText 是学情档案的
+//       text，再加一行老师的笔记本（v0.5，reflect.noteForTeacher）：note 不传时读 kv 'teacherNotes' 的最新一篇
+//       （模拟模式外不算模拟写的那些），没有笔记就不加
 //     resumable(chats, { mode, cardId, now }) -> 可以接着聊的那一段的 id | ''
 //     chipsFor(mode, profile) -> [她可以直接点的一句话]
 //     problemSource(card, params) -> { problem, diagnosis, cardId, tag } | null   problem 模式用哪道题（v0.3.1）：
@@ -42,6 +45,8 @@ import { prepare } from './image.js';
 import { kidMessage, canRetry } from './kid-errors.js';
 import { dayOf } from './notebook.js';
 import { newId } from './db.js';
+import { noteForTeacher, focusPoint } from './reflect.js';
+import { latestNote, isMock, NOTES_KEY } from './notes.js';
 
 export const CHATS_CAP = 50;
 export const HISTORY_CHARS = 12000;
@@ -101,7 +106,8 @@ const imageOf = content => (Array.isArray(content) ? ((content.find(p => p && p.
 export function newChat({ id = newId('c'), mode = 'free', point = null, cardId = '', context = '', stem = '', tag = '', at = new Date().toISOString() } = {}) {
   const m = ['free', 'probe', 'problem'].includes(mode) ? mode : 'free';
   const p = point && typeof point === 'object'
-    ? { name: str(point.name || point.point), tag: str(point.tag), evidence: Array.isArray(point.evidence) ? point.evidence.slice(0, 3).map(str) : [] }
+    ? { name: str(point.name || point.point), tag: str(point.tag), evidence: Array.isArray(point.evidence) ? point.evidence.slice(0, 3).map(str) : [],
+      ...(point.opener ? { opener: str(point.opener) } : {}) }
     : null;
   return { id, mode: m, point: p, cardId: str(cardId), context: str(context), stem: str(stem), tag: str(tag || (p && p.tag)), at, updated: at, messages: [] };
 }
@@ -218,7 +224,7 @@ export function answerTurn({ practice = {}, given = '', result = null, self = nu
   return { display: `我的答案：${g}`, content: `我的答案：${g}\n（这一句是程序加的，她看不到：${judged}。）` };
 }
 
-export function systemFor({ profile = null, kv = null, curriculum = null, today = dayOf() } = {}) {
+export function systemFor({ profile = null, kv = null, curriculum = null, today = dayOf(), mock = false, note } = {}) {
   const peek = (k, f) => { try { return kv && typeof kv.peek === 'function' ? kv.peek(k, f) : f; } catch (e) { return f; } };
   const prog = peek('progress', null);
   const progress = prog && prog.section ? (curriculum && typeof curriculum.title === 'function' ? curriculum.title(prog.section) : str(prog.section)) : '';
@@ -231,7 +237,9 @@ export function systemFor({ profile = null, kv = null, curriculum = null, today 
     exam = `${ex.date}${days > 0 ? `（还有 ${days} 天）` : days === 0 ? '（今天）' : ''}${range}`;
   }
   const tags = curriculum && Array.isArray(curriculum.tags) ? curriculum.tags.map(t => ({ id: t.id, name: t.name })) : [];
-  return teacherSystem({ profileText: (profile && profile.text) || '', progress, exam, tags });
+  const plan = noteForTeacher(note !== undefined ? note : latestNote(peek(NOTES_KEY, []), { mock }));
+  const profileText = [str(profile && profile.text).trim(), plan].filter(Boolean).join('\n');
+  return teacherSystem({ profileText, progress, exam, tags });
 }
 
 export function chipsFor(mode, profile) {
@@ -554,7 +562,7 @@ export function createChat(ctx) {
     let reply = null, error = null;
     try {
       const prof = await ensureProfile();
-      const system = systemFor({ profile: prof, kv: ctx.kv, curriculum: ctx.curriculum, today: today() });
+      const system = systemFor({ profile: prof, kv: ctx.kv, curriculum: ctx.curriculum, today: today(), mock: isMock(ctx) });
       reply = await ctx.ai.chat({ system, messages: apiMessages(c), signal: ctl.signal,
         onDelta: t => { live.text = t; if (chat === c) paintStream(); } });
     } catch (e) { error = e; }
@@ -728,7 +736,9 @@ export function createChat(ctx) {
     if (mode === 'probe') {
       const prof = await ensureProfile();
       if (token !== showToken) return;
-      const point = params.point && params.point.name ? params.point : (probePoint(prof, { today: today() }) || (prof.weak || [])[0]);
+      // 没带点：先看老师的笔记本里想聊的，再看学情档案
+      const note = latestNote(peek(NOTES_KEY, []), { mock: isMock(ctx) });
+      const point = params.point && params.point.name ? params.point : (focusPoint(note, { today: today() }) || probePoint(prof, { today: today() }) || (prof.weak || [])[0]);
       if (point) {
         try { await ctx.kv.set('probeDay', today()); } catch (e) { console.warn('probeDay', e); }
         const c = newChat({ mode: 'probe', point });
