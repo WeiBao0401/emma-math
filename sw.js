@@ -4,7 +4,7 @@
 //   这里的缓存一律叫 "emmamath-…"，也只删 "emmamath-" 开头的旧缓存。
 //   绝不能叫 "emma-…"：英语老师的 sw.js 会删掉所有 "emma-" 开头、不是它自己版本的缓存。
 // Poe、中转站的请求是别的源，直接走网络，这里不碰。照片和错题在 IndexedDB 里，也不经过这里。
-const VERSION = '0.2.1';
+const VERSION = '0.2.2';
 const CACHE = 'emmamath-' + VERSION;
 // 要离线能用的全部文件。web/js、web/css、web/curriculum 下新加文件要加进来（测试检查两个方向：列了的都存在，存在的都列了）。
 // curriculum/ 是公开的课本目录和错因表（几十 KB），跟着版本走，不单独分缓存。

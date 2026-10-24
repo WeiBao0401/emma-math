@@ -1,4 +1,5 @@
-// 家长区（C-practical 8.3，CONTRACTS 第 11 节路由 parent）：首页右上角“家长”进来，先输 4 位数字码（防误点，不是保密）。
+// 家长区（C-practical 8.3，CONTRACTS 第 11 节路由 parent）：首页右上角“家长”点进来就是。Wei 10-24 去掉了 4 位数字码，
+// 门的代码还在（showGate 等），只是不再进去。
 // 里面放：连接（中转站地址、Poe Key、测一下连接）、花费（今天、本月、每天上限）、学习设置（进度锚点、考试日期和范围）、
 // 问老师和“这题有问题”两张清单（只读）、最近 50 次 AI 调用、每个任务用哪个模型、数据（备份、导入、存储、清除）、模拟模式。
 // 负责：家长区 UI agent（ui-parent.js、css/parent.css、tests/parent.test.mjs）。写法照英语老师 App 的 ui-parent.js / ui-me.js。
@@ -516,7 +517,7 @@ export function createParent(ctx) {
     digits = ''; first = ''; msg = '';
     gateBox.hidden = true;
     mainBox.hidden = false;
-    lockBtn.hidden = false;
+    lockBtn.hidden = true;
     loadItems();
     refreshStorage();
     render();
@@ -540,10 +541,8 @@ export function createParent(ctx) {
   }
   function touch() {
     clearTimeout(idleTimer);
-    if (unlocked) idleTimer = setTimeout(() => { lock(); }, IDLE_MS);
   }
   for (const t of ['pointerdown', 'keydown', 'input', 'wheel']) root.addEventListener(t, touch, { capture: true, passive: true });
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') lock(); });
   function handOver() { lock(); ctx.go('home'); }
 
   // ---------------------------------------------------------------- 一组、一行（照英语 App 的 ui-me.js）
@@ -1120,7 +1119,7 @@ export function createParent(ctx) {
     deferredOn = null;
     mainBox.replaceChildren(
       h('h1', { className: 'page-title', text: '家长' }),
-      h('p', { className: 'lead', text: '这里的设置只存在这台 iPad 上。离开这一页、App 退到后台或 5 分钟不操作，就自动锁上。' }),
+      h('p', { className: 'lead', text: '这里的设置只存在这台 iPad 上。' }),
       mockOn() ? h('p', { className: 'status-line parent-mockline' }, icon('info'), h('span', { text: '模拟模式：不连网，不花钱，回答都是假的。' })) : null,
       connectionGroup(),
       moneyGroup(),
@@ -1138,7 +1137,7 @@ export function createParent(ctx) {
   return {
     show() {
       if (!curriculum && ctx.curriculum) curriculum = ctx.curriculum;
-      if (!unlocked) { showGate(); return; }
+      if (!unlocked) { unlock(); return; }   // Wei 10-24：家长区不要数字码，点进来就是
       loadItems();
       refreshStorage();
       render();
