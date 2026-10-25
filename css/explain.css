@@ -158,3 +158,5 @@ button.ex-line:disabled{cursor:default}
 
 /* 核对没能确认时的一句小字（v0.6.1） */
 .ex-soft{margin:0 0 10px;color:var(--muted)}
+.ex-triage{margin-top:16px;color:var(--ink-2,var(--ink))}
+.ex-skip{margin:0 -10px}

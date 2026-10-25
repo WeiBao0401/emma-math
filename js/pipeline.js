@@ -26,8 +26,10 @@
 //             a quiet line. diagnose never returns 'unsure' (Wei 10-25: always help); 'unsure' only comes from her own
 //             “我觉得我是对的” on the confirm screen
 // Variant   { level, q, answer, answer_kind, form, unit, trap, trap_answer, steps, checked: 'program' | 'models' }
+//           本机模板出的题另带 template: <错因 id>（templates.js）
 import { TASKS } from './config.js';
 import { check, compute } from './mathcheck.js';
+import { hasTemplate, makeVariants } from './templates.js';
 import { SYSTEM, diagnoseSystem, variantsSystem, userRecognize, userDiagnose, userVariants, userSolve, userRetry } from './prompts.js';
 
 const MARKS = new Set(['wrong', 'half', 'right', 'none']);
@@ -222,8 +224,30 @@ export function createPipeline({ ai, curriculum = {} } = {}) {
     return { ...d, twin, checked, model, checkModel: v.by, other: v.other || '', checkWhy: good(v) ? '' : (v.why || v.status) };
   }
 
-  async function variants(card, levels = ['同构', '近变式', '近变式', '辨析'], { signal } = {}) {
-    const r = await ai.ask('variants', { system: variantsSystem({ sections }), text: userVariants(card, levels), signal });
+  // 本机题型模板（templates.js）：这个坑有模板时，local: true 先用模板出（不花钱、不用等，补题、错题卷、举一反三用）；
+  // 默认先问模型，模型失败或一道也没出来时退回模板，断网、没 Key 也有题。avoid：不要和这些题面重复。
+  function localVariants(card, levels, avoid) {
+    const tag = str(card && (card.tag || (card.diagnosis && card.diagnosis.tag)));
+    if (!hasTemplate(tag)) return [];
+    return makeVariants(tag, levels, { avoid: new Set((avoid || []).map(str)) });
+  }
+
+  async function variants(card, levels = ['同构', '近变式', '近变式', '辨析'], { signal, local = false, avoid = [] } = {}) {
+    if (local) { const own = localVariants(card, levels, avoid); if (own.length) return own; }
+    let r;
+    try { r = await ai.ask('variants', { system: variantsSystem({ sections }), text: userVariants(card, levels), signal }); }
+    catch (e) {
+      if (e && e.code === 'abort') throw e;
+      const own = localVariants(card, levels, avoid);
+      if (own.length) return own;
+      throw e;
+    }
+    const got = await modelVariants(r, signal);
+    if (got.length) return got;
+    return localVariants(card, levels, avoid);
+  }
+
+  async function modelVariants(r, signal) {
     const list = (r.json && Array.isArray(r.json.variants) ? r.json.variants : []).map(normalizeVariant).filter(v => v.q && v.answer);
     const checked = await Promise.all(list.map(v => verify({ ...v, generator: r.model }, { signal }).catch(e => {
       if (e && e.code === 'abort') throw e;

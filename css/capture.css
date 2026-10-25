@@ -168,3 +168,4 @@
   .cap-dt{line-height:28px}
   .cap-lede{font-size:20px}
 }
+.cap-triage{margin-top:12px;color:var(--ink-2,var(--ink));text-wrap:pretty}

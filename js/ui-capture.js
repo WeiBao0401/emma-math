@@ -56,6 +56,7 @@ import { compute, check } from './mathcheck.js';
 import { newCard, dayOf } from './notebook.js';
 import { kidMessage, canRetry } from './kid-errors.js';
 import { newId } from './db.js';
+import { TRIAGE, canTriage, startPlan } from './triage.js';
 
 // ---------------------------------------------------------------- 常量和文字
 
@@ -657,7 +658,7 @@ export function createCapture(ctx) {
         source, page: lastPage, status: 'read', turned };
       await ctx.store.put('photos', rec);
       if (my !== gen || !open) return;
-      flowOf(ctx).set({ stage: 'page', photoId: rec.id, queue: [], idx: null, problem: null, crop: '', thumb: '',
+      flowOf(ctx).set({ stage: 'page', photoId: rec.id, queue: [], triage: false, idx: null, problem: null, crop: '', thumb: '',
         diagnosing: null, diagnosis: null, diagnoseError: '' });
       ctx.go('page', { photoId: rec.id });
     } catch (e) {
@@ -918,13 +919,21 @@ export function createPage(ctx) {
     const { today, later } = splitPicks(order, left);
     if (!today.length) return;
     await savePending([...today.slice(1), ...later]);
-    try { flowOf(ctx).set({ stage: 'page', photoId: photo.id, queue: today.slice(1) }); } catch (e) { console.warn('flow', e); }
+    try { flowOf(ctx).set({ stage: 'page', photoId: photo.id, queue: today.slice(1), triage: false }); } catch (e) { console.warn('flow', e); }
     ctx.go('confirm', { photoId: photo.id, idx: today[0] });
+  }
+  // 分拣（DESIGN 4.9）：勾上的全都过一遍“自己改”，不看今天的名额；自己改对的轻卡不占名额，改不出来的进待讲
+  async function startTriage() {
+    const plan = startPlan(order);
+    if (!plan) return;
+    await savePending(plan.rest);
+    try { flowOf(ctx).set({ stage: 'page', photoId: photo.id, queue: plan.rest, triage: plan.state }); } catch (e) { console.warn('flow', e); }
+    ctx.go('confirm', { photoId: photo.id, idx: plan.first });
   }
   async function allLater() {
     if (!order.length) return;
     await savePending(order);
-    try { flowOf(ctx).set({ stage: 'page', photoId: photo.id, queue: [] }); } catch (e) { console.warn('flow', e); }
+    try { flowOf(ctx).set({ stage: 'page', photoId: photo.id, queue: [], triage: false }); } catch (e) { console.warn('flow', e); }
     say(ctx, COPY.laterDone);
     ctx.go('home');
   }
@@ -988,6 +997,7 @@ export function createPage(ctx) {
       ? btn(COPY.pickSome, () => {}, 'btn cap-go', { disabled: true })
       : left ? btn(COPY.start(numberLabel(problemOf(photo, today[0]))), startNow, 'btn cap-go') : btn(COPY.allLater, allLater, 'btn cap-go');
     const secondary = order.length > 0 && left > 0 ? btn(COPY.later, allLater, 'text-btn') : null;
+    const triage = canTriage(order) ? btn(TRIAGE.offer, startTriage, 'text-btn') : null;
 
     el.replaceChildren(h('div', { className: 'cap-wrap' },
       navbar({ backLabel: COPY.homeBack, onBack: () => ctx.go('home'), title: COPY.pageTitle }),
@@ -997,10 +1007,11 @@ export function createPage(ctx) {
         allDone ? h('p', { className: 'cap-lede', text: COPY.allDone }) : null,
         h('ul', { className: 'cap-plist' }, rows),
         anyUnpicked ? h('p', { className: 'small cap-missed', text: wrongProblems(photo.page).length ? COPY.missed : COPY.noWrong }) : null,
-        allDone ? null : h('p', { className: 'cap-quota', role: 'status', text: quotaLine })),
+        allDone ? null : h('p', { className: 'cap-quota', role: 'status', text: quotaLine }),
+        !allDone && triage ? h('p', { className: 'small cap-triage', text: TRIAGE.offerNote }) : null),
       allDone
         ? bottomBar(h('div', { className: 'cap-barrow' }, btn(COPY.otherPage, () => ctx.go('capture'), 'btn cap-go'), btn(COPY.home, () => ctx.go('home'), 'text-btn')))
-        : bottomBar(h('div', { className: 'cap-barrow' }, primary, secondary))));
+        : bottomBar(h('div', { className: 'cap-barrow' }, primary, secondary, triage))));
     setBar(true);
 
     // 小截图一张一张裁（一次只解一张 1600 的图，iPad 内存够用）

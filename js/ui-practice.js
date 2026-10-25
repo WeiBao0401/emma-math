@@ -558,7 +558,9 @@ export function createPractice(ctx) {
     if (r.prefetch.has(id)) return r.prefetch.get(id);
     const p = (async () => {
       if (!ctx.pipeline || typeof ctx.pipeline.variants !== 'function') throw Object.assign(new Error('pipeline missing'), { code: 'http' });
-      const got = await ctx.pipeline.variants(variantSource(r.cards.get(id)), refillLevels(level), { signal: r.ctl.signal });
+      const cd = r.cards.get(id);
+      const got = await ctx.pipeline.variants(variantSource(cd), refillLevels(level),
+        { signal: r.ctl.signal, local: true, avoid: [...(cd.used || []), ...(cd.pool || []).map(x => x && x.q)] });
       if (r !== R) return 0;
       const next = { ...mergePool(r.cards.get(id), got), updated: new Date().toISOString() };
       r.cards.set(id, next);

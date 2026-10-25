@@ -236,7 +236,9 @@ export function createPaper(ctx) {
       while (queue.length) {
         const id = queue.shift();
         try {
-          const got = await ctx.pipeline.variants(fillSource(byId.get(id)), FILL_LEVELS);
+          const cd = byId.get(id);
+          const got = await ctx.pipeline.variants(fillSource(cd), FILL_LEVELS,
+            { local: true, avoid: [...(cd.used || []), ...(cd.pool || []).map(x => x && x.q)] });
           if (!got || !got.length) continue;
           byId.set(id, addToPool(byId.get(id), got));
           if (!demo) saveFilled(id, got);

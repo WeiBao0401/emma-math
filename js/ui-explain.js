@@ -80,6 +80,7 @@ import { kidMessage, canRetry } from './kid-errors.js';
 import { createPipeline, boxToRect, localHint, wrongProblems } from './pipeline.js';
 import { crop as cropImage, thumb as thumbImage } from './image.js';
 import { newId, dataURLToBlob } from './db.js';
+import { TRIAGE, beyondSelfFix, parkedState, progressLine, finishLine } from './triage.js';
 // 举一反三的题和复习的变式题是同一种题：出题、判对错、三次提示、夸她的话都照复习（ui-practice 的纯函数）
 import { variantQuestion, judge as judgeQuestion, afterSubmit, praiseLine, missLine, answerText as questionAnswer, flagCard, freeVariants } from './ui-practice.js';
 
@@ -420,7 +421,7 @@ export function attachLocal(card, info) {
 export const flatForVariants = (problem = {}, diag = {}) => ({
   stem: problem.stem || '', options: problem.options || [], answer: diag.answer || '',
   wrong_step: diag.wrong_step || (noWorkOf(problem) ? diag.why || '' : ''),
-  error_type: diag.error_type || '', why: diag.why || '', section: diag.section || '',
+  error_type: diag.error_type || '', why: diag.why || '', section: diag.section || '', tag: diag.tag || '',
 });
 
 export function twinFromPool(list = []) {
@@ -1154,7 +1155,8 @@ export function createExplain(ctx) {
         v = pickExtra(card, { exclude });
       }
       if (!v && card) {
-        const list = await pipeline().variants(flatForVariants(c.problem || card.problem || {}, st0.diagnosis || card.diagnosis || {}), EXTRA_MAKE);
+        const list = await pipeline().variants(flatForVariants(c.problem || card.problem || {}, st0.diagnosis || card.diagnosis || {}), EXTRA_MAKE,
+          { local: true, avoid: [...(card.used || []), ...(card.pool || []).map(x => x && x.q)] });
         const next = await updateCard(id, fresh => ({ ...fresh, pool: poolFrom(list, fresh.pool || [], fresh.used || []), updated: new Date().toISOString() }));
         if (next) card = next;
         v = pickExtra(card, { exclude });
@@ -1241,6 +1243,27 @@ export function createExplain(ctx) {
   }
 
   // ------------------------------------------------ leaving
+
+  // 分拣（triage.js，DESIGN 4.9）：flow.triage 有值时，每道只走“我看到的题对吗”和“先自己找”。自己改对的照常收成轻卡；
+  // 走到提示或讲解的（或点了“这道我先不改”），这道放进待讲，直接去下一道，不讲
+  const triageOn = () => !!flowGet().triage;
+  async function parkTriage(c) {
+    const f = flowGet();
+    const { next, rest } = nextInQueue(f.queue, c.photoId, c.idx);
+    try {
+      const pending = await ctx.kv.get('pending', []);
+      await ctx.kv.set('pending', addPending(pending, [{ photoId: c.photoId, idx: c.idx }]));
+    } catch (e) { console.warn('pending', e); }
+    const tri = parkedState(f.triage);
+    flowSet({ triage: tri });
+    if (next) { ctx.toast(TRIAGE.parkedOne); goNext(c, next, rest); return; }
+    ctx.toast(finishLine(tri));
+    leave();
+    ctx.go('home');
+  }
+  const triageSkipBtn = c => (triageOn()
+    ? h('div', { className: 'btn-row' }, h('button', { type: 'button', className: 'text-btn ex-skip', text: TRIAGE.skip, on: { click: () => { c.triageParked = true; parkTriage(c); } } }))
+    : null);
 
   async function parkPending(c) {
     const f = flowGet();
@@ -1483,6 +1506,7 @@ export function createExplain(ctx) {
     const c = cur;
     if (!c) return;
     if (!shown) { c.sig = ''; return; }   // 在问我那边：回来时 show() 整屏重画
+    if (triageOn() && !c.triageParked && beyondSelfFix(c.st)) { c.triageParked = true; Promise.resolve().then(() => parkTriage(c)); return; }
     askBtn.hidden = !askable(c.st);
     const sig = sigOf(c);
     if (!force && sig === c.sig) { updateStatus(c); return; }
@@ -1507,12 +1531,14 @@ export function createExplain(ctx) {
           noteEl(st.note),
           h('div', { className: 'btn-row' }, h('button', { type: 'button', className: 'text-btn ex-none' + (st.picked === 'none' ? ' on' : ''),
             text: COPY.cantSee, disabled: st.picked !== null, on: { click: () => dispatch({ type: 'pick', line: 'none' }) } })),
+          triageSkipBtn(c),
         ];
       case 'redo':
         return [
           st.note ? mathText(st.note.text, { tag: 'h1', className: 'ex-q' }) : h('h1', { className: 'ex-q', text: COPY.redo }),
           (p.her_work || []).length ? workLines(c) : str(p.her_answer) ? h('p', { className: 'ex-instr' }, COPY.herOld, mathText(asMath(p.her_answer))) : null,
           answerBox(c, 'orig'),
+          triageSkipBtn(c),
         ];
       case 'fix': {
         const wl = wlOf(d, p);
@@ -1520,6 +1546,7 @@ export function createExplain(ctx) {
           st.note ? mathText(st.note.text, { tag: 'h1', className: 'ex-q' }) : h('h1', { className: 'ex-q', text: `第 ${lineLabel(wl)} 行。${COPY.fixHere}` }),
           workLines(c, { mark: wl }),
           answerBox(c, 'orig'),
+          triageSkipBtn(c),
         ];
       }
       case 'hint1': {
@@ -1674,6 +1701,7 @@ export function createExplain(ctx) {
         h('h1', { className: 'ex-done-title', text: v.title }),
         v.lines.map(t => h('p', { className: 'ex-done-line', text: t }))),
       sum ? h('p', { className: 'ex-extra-sum', text: sum }) : null,
+      triageOn() ? h('p', { className: 'small ex-triage', text: next ? progressLine(flowGet().triage, rest.length) : finishLine(flowGet().triage) }) : null,
       more,
       h('div', { className: 'btn-row' }, buttons),
       askMe,
