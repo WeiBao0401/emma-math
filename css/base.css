@@ -195,3 +195,14 @@ mark.marked{background-color:transparent}
 body.has-bar .toast{bottom:calc(var(--bar) + 12px)}
 
 @media (prefers-reduced-motion: reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+
+/* v0.7 老师的头像（ui-dom.teacherAvatar） */
+.t-avatar{flex:none;display:inline-block;width:40px;height:40px;border-radius:50%;overflow:hidden}
+.t-avatar svg{display:block;width:100%;height:100%}
+.t-avatar .av-bg{fill:color-mix(in srgb,var(--accent) 16%,var(--paper))}
+.t-avatar .av-shirt{fill:var(--accent)}
+.t-avatar .av-face{fill:#F2D2B6}
+.t-avatar .av-hair{fill:#3B2F2A}
+.t-avatar .av-glass{fill:none;stroke:#3B2F2A;stroke-width:1.1}
+.t-avatar .av-smile{fill:none;stroke:#8A4B3A;stroke-width:1.2;stroke-linecap:round}
+.t-avatar.sm{width:28px;height:28px}

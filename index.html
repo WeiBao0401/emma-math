@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <!-- connect-src https:：中转站地址由家长在 App 里填，事先不知道域名。脚本、样式、字体只从自己这里来。 -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https:; media-src 'self' blob: data:; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https: wss://openspeech.bytedance.com; media-src 'self' blob: data:; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#FBF8F1" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#14181F" media="(prefers-color-scheme: dark)">
@@ -31,6 +31,7 @@
 <link rel="stylesheet" href="css/parent.css">
 <link rel="stylesheet" href="css/chat.css">
 <link rel="stylesheet" href="css/paper.css">
+<link rel="stylesheet" href="css/bookmap.css">
 </head>
 <body>
 <main id="main">
@@ -77,6 +78,7 @@
 
   <!-- 问我：自由问答、老师主动找她聊、讲完错题接着问，打字、说话、拍题（ui-chat.js，v0.3） -->
   <section id="view-chat" class="view" hidden></section>
+  <section id="view-bookmap" class="view" hidden></section>
 
   <!-- 考前错题卷：选范围、补题、A4 卷子（打印、分享）、对答案（ui-paper.js，v0.4） -->
   <section id="view-paper" class="view" hidden></section>

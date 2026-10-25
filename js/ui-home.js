@@ -40,7 +40,8 @@
 //   导出：examUpkeep(cards, exam, today, woke) -> { cards, changed, woke }   newTalkPaused(exam, today) -> bool
 //   homePlan 多了 paperDone 参数，返回值多了 light（21:00 以后或考前两天）和 exam（examPlan 的结果）。
 //   kv 'examPaper' { exam, done }（错题卷那边写；没有就当不知道）：卷子没做完时考前第 2 天还推错题卷（日历 A）。
-import { h, icon, dateCn } from './ui-dom.js';
+import { h, icon, dateCn, teacherAvatar } from './ui-dom.js';
+import { textbookMap, buildPoint, progressPoint } from './bookmap.js';
 import { dayOf, addDays, due, reviewPlan, quotaFor, shortName, SHORT_NAMES, LATE_HOUR, examPlan, compressDue, wake } from './notebook.js';
 import { ROUTES } from './nav.js';
 import { kidMessage } from './kid-errors.js';
@@ -60,6 +61,21 @@ import { latestNote, runReflect, isMock as mockMode, NOTES_KEY } from './notes.j
 //     （homeProbe）。卡上的名字用错因的短名（SHORT_NAMES），没有短名才用笔记里的说法；开场的问法（opener）带给老师
 //   首页显示时在后台调 notes.runReflect：到了该写的时候写一篇，不挡界面，不告诉她，写好了下次显示时用
 export const ASK_LABEL = '有问题，问我';
+
+// v0.7 更多聊一聊的机会（Wei 10-25）：弱点小卡今天没有（或聊过、跳过了）时，再看课本：
+// 进度不知道或一周没更新，问她“课上学到哪了”；否则挑一节学过但还没一起做过题的，摸摸底。一天一次（kv 'checkinDay'）
+export const PROGRESS_STALE_DAYS = 7;
+export function checkinPoint({ curriculum = null, cards = [], progress = null, toc = null, today = dayOf(), checkinDay = '' } = {}) {
+  if (checkinDay === today) return null;
+  const upd = String((progress && progress.updated) || '').slice(0, 10);
+  if (!progress || !progress.section || !upd || addDays(upd, PROGRESS_STALE_DAYS) <= today) return progressPoint();
+  return buildPoint(textbookMap({ curriculum, cards, progress, toc, today }));
+}
+export function checkinLine(point) {
+  if (!point) return { title: '', why: '' };
+  if (point.kind === 'progress') return { title: '想和你聊 1 分钟：这几天数学课学到哪了？', why: '我好跟着你们的进度出题。' };
+  return { title: `想和你聊 3 分钟：${point.name}。`, why: '这一节你们学过了，我们还没一起做过题。出两道小题摸摸底。' };
+}
 
 // 首页小卡聊哪个点。note 是最新一篇笔记，talked 是这篇写好以后主动聊过的点（名字或错因 id）
 export function homeProbe({ note = null, profile = null, today = dayOf(), probeDay = '', talked = [] } = {}) {
@@ -452,6 +468,7 @@ export function createHome(ctx) {
       // 字和数字包在一个 span 里：按钮是 flex，零散的字和数字之间会被 gap 撑开
       later ? h('button', { type: 'button', className: 'text-btn home-link accent', on: { click: goPending } }, h('span', {}, withNumbers(later))) : null,
       h('button', { type: 'button', className: 'text-btn home-link', on: { click: () => ctx.go('book') } }, icon('book'), h('span', { text: '错题本' })),
+      h('button', { type: 'button', className: 'text-btn home-link', on: { click: () => ctx.go('bookmap') } }, icon('note'), h('span', { text: '课本地图' })),
       ask ? h('button', { type: 'button', className: 'text-btn home-link home-askteacher', 'aria-label': `${ASK_TITLE}，有要问的题`, on: { click: () => ctx.go('book', { tab: 'ask' }) } },
         h('span', { text: ASK_TITLE }), h('span', { className: 'home-dot', 'aria-hidden': 'true' })) : null,
     ].filter(Boolean));
@@ -469,15 +486,30 @@ export function createHome(ctx) {
 
   // 私人老师：主动找她聊的小卡，和一直在的“有问题，问我”
   function teacherEl() {
-    const line = probeLine(probe);
-    const card = probe ? h('div', { className: 'home-probe' },
-      h('p', { className: 'home-probe-title', text: line.title }),
-      line.why ? h('p', { className: 'home-probe-why', text: line.why }) : null,
-      h('div', { className: 'btn-row' },
-        h('button', { type: 'button', className: 'btn', text: '好，聊聊', on: { click: () => ctx.go('chat', { mode: 'probe', point: probe }) } }),
-        h('button', { type: 'button', className: 'text-btn', text: '今天先不', on: { click: skipProbe } }))) : null;
+    // 弱点小卡优先；没有就看课本（checkinPoint），两张都是老师主动找她，带头像
+    let chk = null;
+    if (!probe && cards) {
+      try {
+        chk = checkinPoint({ curriculum: ctx.curriculum, cards, progress: ctx.kv.peek('progress', null), toc: (ctx.kv.peek('textbook', null) || {}).toc || null,
+          today: today(), checkinDay: ctx.kv.peek('checkinDay', '') });
+      } catch (e) { chk = null; }
+    }
+    const point = probe || chk;
+    const line = probe ? probeLine(probe) : checkinLine(chk);
+    const card = point ? h('div', { className: 'home-probe' },
+      teacherAvatar('home-probe-av'),
+      h('div', { className: 'home-probe-body' },
+        h('p', { className: 'home-probe-title', text: line.title }),
+        line.why ? h('p', { className: 'home-probe-why', text: line.why }) : null,
+        h('div', { className: 'btn-row' },
+          h('button', { type: 'button', className: 'btn', text: '好，聊聊', on: { click: () => ctx.go('chat', { mode: 'probe', point }) } }),
+          h('button', { type: 'button', className: 'text-btn', text: '今天先不', on: { click: probe ? skipProbe : skipCheckin } })))) : null;
     return h('div', { className: 'home-teacher' }, card,
-      h('button', { type: 'button', className: 'btn quiet home-ask', on: { click: () => ctx.go('chat', { mode: 'free' }) } }, icon('chat'), h('span', { text: ASK_LABEL })));
+      h('button', { type: 'button', className: 'btn quiet home-ask', on: { click: () => ctx.go('chat', { mode: 'free' }) } }, teacherAvatar('sm'), h('span', { text: ASK_LABEL })));
+  }
+  async function skipCheckin() {
+    try { await ctx.kv.set('checkinDay', today()); } catch (e) { console.warn('checkinDay', e); }
+    render();
   }
   // 期中季维护（examUpkeep）：叫醒、考前压缩，变了的卡存回去。存不上只记 console，首页照样按新排程显示，下次再存
   async function keepExam(list) {

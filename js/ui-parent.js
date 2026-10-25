@@ -914,40 +914,37 @@ export function createParent(ctx) {
     ], '每周一篇：离上一篇满 7 天、这期间作答和对话记录有 5 条以上时，打开首页就在后台写，她看不到。老师和她聊天、主动找她聊时都参考最新一篇。');
   }
 
-  // ---------------------------------------------------------------- v0.3 语音转文字（voice.js）
+  // ---------------------------------------------------------------- v0.7 语音（voice-input.js，和英语 App 同一套豆包凭据）
   function doubaoPanel() {
-    const d = settings().doubao || {};
-    const appId = h('input', { type: 'text', className: 'field mono', placeholder: 'App ID', autocomplete: 'off', autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false', 'aria-label': '豆包 App ID', value: d.appId || '' });
-    const key = h('input', { type: 'password', className: 'field mono', placeholder: d.accessKey ? '已填（不显示），要换就粘贴新的' : 'Access Key', autocomplete: 'off', autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false', 'aria-label': '豆包 Access Key' });
-    if (justOpened === 'doubao') requestAnimationFrame(() => appId.focus());
+    const s = settings();
+    const appId = h('input', { type: 'text', className: 'field mono', placeholder: '新版控制台只有 API Key 时空着', autocomplete: 'off', autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false', 'aria-label': '豆包 APP ID', value: s.doubaoAppId || '' });
+    const key = h('input', { type: 'password', className: 'field mono', placeholder: s.doubaoToken ? '已填（不显示），要换就粘贴新的' : 'Access Token 或 API Key', autocomplete: 'off', autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false', 'aria-label': '豆包 Access Token' });
+    const res = h('input', { type: 'text', className: 'field mono', placeholder: 'volc.seedasr.sauc.duration', autocomplete: 'off', autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false', 'aria-label': '资源 ID', value: s.doubaoCluster || '' });
+    if (justOpened === 'doubao') requestAnimationFrame(() => key.focus());
     const clean = v => String(v || '').replace(/[\s\u200b-\u200d\u2060\ufeff]/g, '');
     const save = async () => {
-      const next = { appId: clean(appId.value), accessKey: clean(key.value) || d.accessKey || '' };
-      if (!next.appId || !next.accessKey) { toast('App ID 和 Access Key 都要填'); return; }
-      if (await saveSettings({ doubao: next, asr: 'doubao' }, '存好了，语音改用豆包')) closeRow('doubao');
+      const token = clean(key.value) || s.doubaoToken || '';
+      if (!token) { toast('Access Token 要填'); return; }
+      if (await saveSettings({ doubaoAppId: clean(appId.value), doubaoToken: token, doubaoCluster: clean(res.value), asrFrom: '' }, '存好了，语音用豆包')) closeRow('doubao');
     };
     return [
-      h('p', { className: 'small', text: '火山引擎控制台“豆包语音”里，开通“大模型录音文件识别极速版”，复制 App ID 和 Access Key。只存在这台 iPad 上，不进备份文件。' }),
-      h('p', { className: 'small', text: '还没实测过：豆包没转成（Key 不对、浏览器不让直接调用等），会自动改用 Poe，她感觉不到，“最近的 AI 调用”里能看到原因。' }),
-      h('label', { className: 'fld' }, h('span', { className: 'fld-k', text: 'App ID' }), appId),
-      h('label', { className: 'fld' }, h('span', { className: 'fld-k', text: 'Access Key' }), key),
+      h('p', { className: 'small', text: '和英语 App 用同一套：火山引擎“豆包流式语音识别模型 2.0”。旧版控制台填 APP ID 和 Access Token；新版控制台只有 API Key，放在 Access Token 里，APP ID 空着。只存在这台 iPad 上，不进备份文件。' }),
+      h('label', { className: 'fld' }, h('span', { className: 'fld-k', text: 'APP ID' }), appId),
+      h('label', { className: 'fld' }, h('span', { className: 'fld-k', text: 'Access Token' }), key),
+      h('label', { className: 'fld' }, h('span', { className: 'fld-k', text: '资源 ID（可空）' }), res),
       h('div', { className: 'btn-row' },
         h('button', { type: 'button', className: 'btn', text: '保存', on: { click: save } }),
         h('button', { type: 'button', className: 'text-btn', text: '取消', on: { click: () => closeRow('doubao') } }),
-        d.appId || d.accessKey ? h('button', { type: 'button', className: 'text-btn danger', text: '清除', on: { click: async () => { if (await saveSettings({ doubao: { appId: '', accessKey: '' }, asr: 'poe' }, '清掉了，语音用 Poe')) closeRow('doubao'); } } }) : null),
+        s.doubaoToken ? h('button', { type: 'button', className: 'text-btn danger', text: '清除', on: { click: async () => { if (await saveSettings({ doubaoAppId: '', doubaoToken: '', doubaoCluster: '', asrFrom: 'cleared' }, '清掉了，语音改用 Poe 转写')) closeRow('doubao'); } } }) : null),
     ];
   }
   function voiceGroup() {
     const s = settings();
-    const d = s.doubao || {};
-    const ready = !!(d.appId && d.accessKey);
-    const asr = s.asr === 'doubao' ? 'doubao' : 'poe';
-    return group('语音转文字', [
-      row({ label: '她说的话用谁转成文字', sub: asr === 'doubao' && !ready ? '选了豆包但还没填 Key，现在用的是 Poe' : '转好的字先放进输入框，她看一眼再发', cls: 'parent-model',
-        right: select([{ value: 'poe', text: 'Poe（gemini-3.1-pro）' }, { value: 'doubao', text: '豆包语音' }], asr,
-          async v => { if (await saveSettings({ asr: v }, v === 'doubao' && !ready ? '再填上豆包的 App ID 和 Key' : '')) render(); }, '语音转文字') }),
-      row({ key: 'doubao', label: '豆包 App ID 和 Key', sub: '火山引擎，录音文件识别极速版', value: ready ? '已填' : '还没填', panel: doubaoPanel }),
-    ], 'Poe 转一段 10 秒的话大约 7 到 9 秒。');
+    const ready = !!s.doubaoToken;
+    const from = s.asrFrom === 'english' ? '（从英语 App 拿的）' : '';
+    return group('语音', [
+      row({ key: 'doubao', label: '豆包语音', sub: ready ? '按住说话，边说边出字，松开就发' + from : '没填时按住录一整段，松开交给 Poe 转写，慢几秒', value: ready ? '已填' : '还没填', panel: doubaoPanel }),
+    ], '和英语 App 一样：按住“按住 说话”说，往上滑取消；左边的按钮可以换成打字。英语 App 填过豆包的话，这里打开时自动拿过来。');
   }
 
   // ---------------------------------------------------------------- 两张清单：问老师、“这题有问题”
@@ -962,9 +959,9 @@ export function createParent(ctx) {
   function askPanel() {
     if (items === null) return [loading()];
     const list = askList(items);
-    if (!list.length) return [h('p', { className: 'small', text: '现在没有要问老师的题。' })];
+    if (!list.length) return [h('p', { className: 'small', text: '现在没有攒下的问题。' })];
     return [
-      h('p', { className: 'small', text: '这些题我没讲：答案核对不了，或者她觉得我（或老师）判得不对。让她带去问学校老师。' }),
+      h('p', { className: 'small', text: '她提过的问题：觉得自己是对的、觉得题有问题、讲完还不太懂。点开“我的问题”，老师会和她一起弄清楚。' }),
       h('ul', { className: 'parent-list' }, ...list.map(x => h('li', { className: 'parent-item' + (x.thumb ? ' has-thumb' : '') },
         x.thumb ? h('img', { src: x.thumb, alt: '原题截图', loading: 'lazy' }) : null,
         h('div', { className: 'parent-item-body' },
@@ -997,7 +994,7 @@ export function createParent(ctx) {
     const nFlag = items === null ? null : collectFlags(items).length;
     const count = (n, unit) => (n === null ? '' : n ? `${n} ${unit}` : '没有');
     return group('她的题', [
-      row({ key: 'ask', label: '问老师', sub: '我讲不了、要问学校老师的题', value: count(nAsk, '道'), panel: askPanel }),
+      row({ key: 'ask', label: '她的问题', sub: '她提过、还没弄清的题', value: count(nAsk, '道'), panel: askPanel }),
       row({ key: 'flags', label: '“这题有问题”', sub: '她点过的题和讲解', value: count(nFlag, '次'), panel: flagPanel }),
     ], itemsError ? `错题本没读出来：${itemsError}` : '只读。改动在她那边的错题本里做。');
   }

@@ -35,11 +35,11 @@
 //
 // kv：'chats'（[{ id, at, updated, title, mode, cardId }] 最近 50 个）、'chat:<id>'（整段对话）、'observations'（【记录】，
 // profile.addObservations）、'probeDay'。作答写进 attempts（kind 'chat'，itemId 是卡的 id 或 'chat:<对话 id>'，带 tag）。
-// 依赖：ui-dom、teacher、md、voice、profile、keypad、mathcheck、mathview、image、kid-errors、notebook。
-import { h, icon, mathText, ago } from './ui-dom.js';
-import { teacherSystem, probeUser, problemContext, splitReply, visibleSoFar, QUICK_REPLIES, trimHistory } from './teacher.js';
+// 依赖：ui-dom、teacher、md、voice-input、profile、keypad、mathcheck、mathview、image、kid-errors、notebook。
+import { h, icon, mathText, ago, teacherAvatar } from './ui-dom.js';
+import { teacherSystem, probeUser, settleUser, problemContext, splitReply, visibleSoFar, QUICK_REPLIES, trimHistory } from './teacher.js';
 import { renderMessage, plainMessage } from './md.js';
-import { createRecorder, transcribe } from './voice.js';
+import { createVoiceInput } from './voice-input.js';
 import { loadProfile, probePoint, addObservations } from './profile.js';
 import { createAnswer } from './keypad.js';
 import { check, compute } from './mathcheck.js';
@@ -50,6 +50,7 @@ import { dayOf } from './notebook.js';
 import { newId } from './db.js';
 import { noteForTeacher, focusPoint } from './reflect.js';
 import { latestNote, isMock, NOTES_KEY } from './notes.js';
+import { textbookMap, teacherLine } from './bookmap.js';
 
 export const CHATS_CAP = 50;
 export const HISTORY_CHARS = 12000;
@@ -70,14 +71,16 @@ export const COPY = {
   retry: '再试一次',
   placeholder: '想问什么，写在这里',
   send: '发给老师',
-  recording: '在听，说完点“说完了”。',
-  stopRec: '说完了',
-  cancelRec: '不要了',
-  listening: '正在听你说的话',
-  heard: '是这样说的吗？看一眼，没问题就发给我。',
-  micDenied: '麦克风没打开。可以打字问我。',
-  micNone: '这台 iPad 现在录不了音。可以打字问我。',
-  tooShort: '太短了。按一下开始说，说完再按一下。',
+  hold: '按住 说话',
+  holdUp: '松开 发送',
+  holdCancel: '松开 取消',
+  holdWait: '在听写…',
+  liveHint: '正在听你说…  往上滑可以取消',
+  micDenied: '要先允许用麦克风，再按住说一次。',
+  tooShort: '按住说话，说完再松开。',
+  notHeard: '没听清，再按住说一次。',
+  toType: '打字',
+  toVoice: '说话',
   photo: '拍题',
   photoFail: '这张照片没放上，再选一次。',
   photoDefault: '这道题我不会，帮我看看。',
@@ -228,7 +231,7 @@ export function answerTurn({ practice = {}, given = '', result = null, self = nu
   return { display: `我的答案：${g}`, content: `我的答案：${g}\n（这一句是程序加的，她看不到：${judged}。）` };
 }
 
-export function systemFor({ profile = null, kv = null, curriculum = null, today = dayOf(), mock = false, note } = {}) {
+export function systemFor({ profile = null, kv = null, curriculum = null, today = dayOf(), mock = false, note, cards = null } = {}) {
   const peek = (k, f) => { try { return kv && typeof kv.peek === 'function' ? kv.peek(k, f) : f; } catch (e) { return f; } };
   const prog = peek('progress', null);
   const progress = prog && prog.section ? (curriculum && typeof curriculum.title === 'function' ? curriculum.title(prog.section) : str(prog.section)) : '';
@@ -243,7 +246,10 @@ export function systemFor({ profile = null, kv = null, curriculum = null, today 
   const tags = curriculum && Array.isArray(curriculum.tags) ? curriculum.tags.map(t => ({ id: t.id, name: t.name })) : [];
   const plan = noteForTeacher(note !== undefined ? note : latestNote(peek(NOTES_KEY, []), { mock }));
   const profileText = [str(profile && profile.text).trim(), plan].filter(Boolean).join('\n');
-  return teacherSystem({ profileText, progress, exam, tags });
+  // v0.7 课本地图：学到哪、哪几节还在错、哪几节还没见过她做题（bookmap.teacherLine）
+  let book = '';
+  try { if (cards) book = teacherLine(textbookMap({ curriculum, cards, progress: prog, toc: (peek('textbook', null) || {}).toc || null, today })); } catch (e) { book = ''; }
+  return teacherSystem({ profileText, progress, exam, tags, book });
 }
 
 // v0.6.0 讲题中途问我：讲题的每一屏带着 step（她停在哪一步、那一屏写着什么）和 chatId（同一道题接着同一段聊）来。
@@ -297,20 +303,20 @@ export function createChat(ctx) {
   const fileIn = h('input', { type: 'file', accept: 'image/*', className: 'visually-hidden', tabIndex: -1, 'aria-label': COPY.photo });
   const input = h('textarea', { className: 'chat-input', rows: 1, placeholder: COPY.placeholder, 'aria-label': COPY.placeholder, enterkeyhint: 'send' });
   const camBtn = h('button', { type: 'button', className: 'chat-icon-btn', 'aria-label': COPY.photo, on: { click: () => fileIn.click() } }, icon('camera'));
-  const micBtn = h('button', { type: 'button', className: 'chat-icon-btn chat-mic', 'aria-label': '说话', on: { click: () => toggleRec() } }, icon('mic'));
+  // 语音（v0.7，和英语 App 一样）：输入框换成一整条“按住 说话”，说的话边说边出在上面，松开就发，往上滑取消；
+  // 左边的小按钮在说话和打字之间切换，记在 localStorage
+  const MODE_KEY = 'emmamath.chat.mode';
+  const voice = createVoiceInput(ctx);
+  let voiceMode = (() => { try { return localStorage.getItem(MODE_KEY) !== 'text'; } catch (e) { return true; } })();
+  const holdLabel = h('span', { text: COPY.hold });
+  const holdBtn = h('button', { type: 'button', className: 'chat-hold', 'aria-label': '按住说话，松开发送' }, holdLabel);
+  const live = h('div', { className: 'chat-live', hidden: true, 'aria-live': 'polite' });
+  const modeBtn = h('button', { type: 'button', className: 'chat-icon-btn chat-mode', on: { click: () => setVoiceMode(!voiceMode, true) } });
   const sendBtn = h('button', { type: 'button', className: 'chat-send', 'aria-label': COPY.send, on: { click: () => sendTyped() } }, icon('send'));
   const photoRow = h('div', { className: 'chat-photo-row', hidden: true });
-  const recLevel = h('span', { className: 'chat-level', 'aria-hidden': 'true' }, [0, 1, 2, 3, 4, 5, 6].map(() => h('i')));
-  const recTime = h('span', { className: 'chat-rec-time num', text: '0:00' });
-  const recRow = h('div', { className: 'chat-rec', hidden: true },
-    h('span', { className: 'chat-rec-dot', 'aria-hidden': 'true' }), recLevel, recTime,
-    h('span', { className: 'chat-rec-msg small', text: COPY.recording }),
-    h('span', { className: 'chat-rec-btns' },
-      h('button', { type: 'button', className: 'text-btn', text: COPY.cancelRec, on: { click: () => cancelRec() } }),
-      h('button', { type: 'button', className: 'btn chat-rec-stop', on: { click: () => toggleRec() } }, icon('stop'), h('span', { text: COPY.stopRec }))));
   const hearRow = h('p', { className: 'small chat-hear', hidden: true, role: 'status' });
-  const inputRow = h('div', { className: 'chat-input-row' }, camBtn, input, micBtn, sendBtn);
-  const bar = h('div', { className: 'ebar chat-bar' }, h('div', { className: 'inner' }, photoRow, recRow, hearRow, inputRow));
+  const inputRow = h('div', { className: 'chat-input-row' }, modeBtn, camBtn, input, holdBtn, sendBtn);
+  const bar = h('div', { className: 'ebar chat-bar' }, h('div', { className: 'inner' }, photoRow, live, hearRow, inputRow));
   root.append(navbar, page, bar, fileIn);
 
   // ------------------------------------------------ 状态
@@ -318,8 +324,7 @@ export function createChat(ctx) {
   let profile = null;
   let photo = '';               // 要和下一句一起发的照片（dataURL）
   let answerW = null;           // 当前练习题的小键盘
-  let rec = null, recRaf = 0;
-  let listening = null;         // 转文字时的 AbortController
+  let rec = null;               // 正在按住说话的这一次
   let showToken = 0;
   let mode = 'free';
   const running = new Map();    // chatId -> { text, ctl }：正在流式回答的
@@ -372,7 +377,7 @@ export function createChat(ctx) {
       const text = h('div', { className: 'chat-text' });
       text.innerHTML = renderMessage(str(m.display ?? splitReply(textOf(m.content)).display));   // renderText 先转义
       const showPast = m.practice && (m.practiceDone || !isLast) && !m.swapAsked;
-      return h('div', { className: 'chat-msg t' + (m.local ? ' local' : '') }, text, showPast ? pastPractice(m) : null);
+      return h('div', { className: 'chat-msg t' + (m.local ? ' local' : '') }, teacherAvatar('chat-av'), h('div', { className: 'chat-tbody' }, text, showPast ? pastPractice(m) : null));
     }
     const img = m.image || imageOf(m.content);
     const words = str(m.display ?? textOf(m.content));
@@ -413,7 +418,7 @@ export function createChat(ctx) {
     streamText = h('div', { className: 'chat-text' });
     if (shown) streamText.innerHTML = renderMessage(shown);
     else streamText.append(h('span', { className: 'small dots chat-thinking', text: COPY.thinking }));
-    return h('div', { className: 'chat-msg t streaming' }, streamText);
+    return h('div', { className: 'chat-msg t streaming' }, teacherAvatar('chat-av'), h('div', { className: 'chat-tbody' }, streamText));
   }
   let paintQueued = false;
   function paintStream() {
@@ -543,7 +548,8 @@ export function createChat(ctx) {
   function syncBar() {
     const busy = !!(chat && running.get(chat.id));
     sendBtn.disabled = busy || (!input.value.trim() && !photo);
-    micBtn.disabled = !!listening;
+    holdBtn.disabled = busy;
+    sendBtn.hidden = voiceMode && !photo && !input.value.trim();
     photoRow.hidden = !photo;
     if (photo) {
       photoRow.replaceChildren(h('img', { className: 'chat-photo-prev', src: photo, alt: '要发的照片' }),
@@ -587,7 +593,9 @@ export function createChat(ctx) {
     let reply = null, error = null;
     try {
       const prof = await ensureProfile();
-      const system = systemFor({ profile: prof, kv: ctx.kv, curriculum: ctx.curriculum, today: today(), mock: isMock(ctx) });
+      let cards = null;
+      try { cards = ctx.store && typeof ctx.store.all === 'function' ? await ctx.store.all('items') : null; } catch (e) { cards = null; }
+      const system = systemFor({ profile: prof, kv: ctx.kv, curriculum: ctx.curriculum, today: today(), mock: isMock(ctx), cards });
       reply = await ctx.ai.chat({ system, messages: apiMessages(c), signal: ctl.signal,
         onDelta: t => { live.text = t; if (chat === c) paintStream(); } });
     } catch (e) { error = e; }
@@ -608,6 +616,10 @@ export function createChat(ctx) {
       if (reply.partial) msg.partial = true;
       c.messages.push(msg);
       await saveNotes(c, parts.notes);
+      // v0.7：她说了课上学到哪，老师写了【进度】，记成进度锚点
+      if (parts.progress) {
+        try { await ctx.kv.set('progress', { ...(peek('progress', {}) || {}), section: parts.progress, updated: at, from: 'chat' }); } catch (e) { console.warn('progress', e); }
+      }
     }
     await saveChat(c);
     if (chat === c) render({ keepScroll: true });
@@ -641,73 +653,86 @@ export function createChat(ctx) {
     } catch (e) { console.warn('photo', e); ctx.toast(COPY.photoFail); }
   });
 
-  function recUI(on) {
-    recRow.hidden = !on;
-    inputRow.hidden = on;
-    cancelAnimationFrame(recRaf);
-    if (!on) return;
-    const bars = [...recLevel.children];
-    const hist = bars.map(() => 0);
-    const tick = () => {
-      if (!rec || rec.state() !== 'recording') return;
-      hist.shift(); hist.push(rec.level());
-      bars.forEach((b, i) => { b.style.transform = `scaleY(${0.15 + hist[i] * 0.85})`; });
-      const s = Math.floor(rec.elapsed() / 1000);
-      recTime.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-      recRaf = requestAnimationFrame(tick);
-    };
-    recRaf = requestAnimationFrame(tick);
+  function setVoiceMode(on, remember) {
+    voiceMode = !!on;
+    if (remember) { try { localStorage.setItem(MODE_KEY, voiceMode ? 'voice' : 'text'); } catch (e) { /* fine */ } }
+    input.hidden = voiceMode;
+    holdBtn.hidden = !voiceMode;
+    modeBtn.replaceChildren(icon(voiceMode ? 'keyboard' : 'mic'), h('span', { text: voiceMode ? COPY.toType : COPY.toVoice }));
+    modeBtn.setAttribute('aria-label', voiceMode ? '改成打字' : '改成说话');
+    syncBar();
+    if (!voiceMode && remember) { try { input.focus(); } catch (e) { /* fine */ } }
   }
-
-  async function toggleRec() {
-    if (listening) return;
-    if (rec && rec.state() === 'recording') {
-      let blob;
-      try { blob = await rec.stop(); } catch (e) { recUI(false); if (e.code === 'short') ctx.toast(COPY.tooShort); return; }
-      recUI(false);
-      await heard(blob);
+  function setMic(state) {
+    holdBtn.classList.toggle('on', state === true || state === 'cancel');
+    holdBtn.classList.toggle('cancel', state === 'cancel');
+    holdBtn.classList.toggle('wait', state === 'wait');
+    holdLabel.textContent = state === true ? COPY.holdUp : state === 'cancel' ? COPY.holdCancel : state === 'wait' ? COPY.holdWait : COPY.hold;
+    live.hidden = !(state === true || state === 'cancel' || state === 'wait');
+    live.classList.toggle('cancel', state === 'cancel');
+    if (state === true && !live.textContent) live.textContent = COPY.liveHint;
+    if (!state) live.textContent = '';
+  }
+  const joinText = (base, add) => (base && add ? base.replace(/\s+$/, '') + add : base || add || '');
+  function voiceError(err) {
+    if (err && err.name === 'NotAllowedError') return COPY.micDenied;
+    if (err && typeof err.kid === 'string' && err.kid) return err.kid;
+    return COPY.notHeard;
+  }
+  holdBtn.addEventListener('contextmenu', e => e.preventDefault());
+  holdBtn.addEventListener('pointerdown', async e => {
+    if ((chat && running.get(chat.id)) || rec) return;
+    e.preventDefault();
+    try { holdBtn.setPointerCapture(e.pointerId); } catch (err) { /* fine */ }
+    const r = { base: input.value, t0: Date.now(), y0: e.clientY, started: null, armed: false };
+    rec = r;
+    hearRow.hidden = true;
+    setMic(true);
+    try {
+      // 前面不能有 await：豆包流式的 AudioContext 要在这次点按里建
+      r.started = Promise.resolve(voice.start({ onPartial: t => { if (rec === r) { input.value = joinText(r.base, String(t || '')); live.textContent = input.value || COPY.liveHint; } } }));
+      await r.started;
+    } catch (err) {
+      if (rec === r) { rec = null; setMic(false); input.value = r.base; ctx.toast(voiceError(err), 2500); }
+    }
+  });
+  async function endHold(cancel) {
+    const r = rec;
+    if (!r) return;
+    rec = null;
+    const quick = Date.now() - r.t0 < 350;
+    if (cancel || quick) {
+      setMic(false);
+      try { voice.cancel(); } catch (err) { /* dropped anyway */ }
+      input.value = r.base;
+      if (quick && !cancel) ctx.toast(COPY.tooShort, 2000);
       return;
     }
-    if (rec && rec.state() !== 'idle') return;
-    rec = createRecorder({ maxMs: 60000, onAutoStop: b => { recUI(false); if (b instanceof Blob) heard(b); } });
+    setMic('wait');
     try {
-      await rec.start();
-      recUI(true);
-    } catch (e) {
-      recUI(false);
-      ctx.toast(e.code === 'denied' ? COPY.micDenied : e.code === 'abort' ? '' : COPY.micNone, 3000);
-    }
-  }
-  function cancelRec() { if (rec) rec.cancel(); recUI(false); }
-
-  async function heard(blob) {
-    const ctl = listening = new AbortController();
-    hearRow.hidden = false;
-    hearRow.className = 'small chat-hear dots';
-    hearRow.textContent = COPY.listening;
-    syncBar();
-    try {
-      const text = await transcribe(ctx, blob, { signal: ctl.signal });
-      if (listening !== ctl) return;
-      if (text) {
-        input.value = input.value.trim() ? `${input.value.trim()} ${text}` : text;
-        fitInput();
-        hearRow.className = 'small chat-hear';
-        hearRow.textContent = COPY.heard;
-      } else {
-        hearRow.className = 'small chat-hear';
-        hearRow.textContent = COPY.tooShort;
-      }
-    } catch (e) {
-      if (listening !== ctl) return;
-      hearRow.className = 'small chat-hear danger';
-      hearRow.textContent = e.code === 'abort' ? '' : kidMessage(e, { where: 'listen' });
-      hearRow.hidden = !hearRow.textContent;
+      await r.started;
+      const text = String((await voice.stop()) || '').trim();
+      if (text) input.value = joinText(r.base, text);
+      else if (input.value === r.base) ctx.toast(COPY.notHeard, 2000);
+      // 说话模式：松开就发，像发语音消息；打字模式不会到这里
+      if (input.value.trim() && input.value !== r.base) { setMic(false); sendTyped(); }
+    } catch (err) {
+      ctx.toast(voiceError(err), 2500);
     } finally {
-      if (listening === ctl) listening = null;
+      setMic(false);
+      fitInput();
       syncBar();
     }
   }
+  holdBtn.addEventListener('pointermove', e => {
+    const r = rec;
+    if (!r) return;
+    const up = r.y0 - e.clientY > 60;
+    if (up !== r.armed) { r.armed = up; setMic(up ? 'cancel' : true); }
+  });
+  holdBtn.addEventListener('pointerup', () => endHold(!!(rec && rec.armed)));
+  holdBtn.addEventListener('pointercancel', () => endHold(true));
+  setVoiceMode(voiceMode && voice.available(), false);
 
   // ------------------------------------------------ 开一段
   async function openChat(c, { intro = '' } = {}) {
@@ -760,6 +785,8 @@ export function createChat(ctx) {
       if (str(params.step)) c.steps = [str(params.step)];
       c.herAnswer = str(problem.her_answer);
       if (problem.useWork === false) { c.herAnswer = ''; c.noWork = true; }   // 订正过、选了直接讲：卷子上的已经是改过的答案，不当她当时写的
+      // v0.7 我的问题“和我弄清楚”：老师先开口
+      if (str(params.settle)) { await openChat(c); send({ hidden: settleUser(str(params.settle)) }); return; }
       await openChat(c, { intro: c.noWork ? COPY.introDirect : COPY.introProblem });
       return;
     }
@@ -771,7 +798,8 @@ export function createChat(ctx) {
       const note = latestNote(peek(NOTES_KEY, []), { mock: isMock(ctx) });
       const point = params.point && params.point.name ? params.point : (focusPoint(note, { today: today() }) || probePoint(prof, { today: today() }) || (prof.weak || [])[0]);
       if (point) {
-        try { await ctx.kv.set('probeDay', today()); } catch (e) { console.warn('probeDay', e); }
+        const dayKey = point.kind === 'build' || point.kind === 'progress' ? 'checkinDay' : 'probeDay';   // v0.7 课本的小卡另算一天
+        try { await ctx.kv.set(dayKey, today()); } catch (e) { console.warn(dayKey, e); }
         const c = newChat({ mode: 'probe', point });
         await openChat(c);
         send({ hidden: probeUser(point) });
@@ -787,8 +815,7 @@ export function createChat(ctx) {
   function hide() {
     showToken++;
     destroyAnswer();
-    if (rec && rec.state() !== 'idle') cancelRec();
-    if (listening) { listening.abort(); listening = null; }
+    if (rec) { rec = null; setMic(false); try { voice.cancel(); } catch (e) { /* dropped */ } }
     // 正在回答的不停：答完自己存好，回来能看到
   }
 

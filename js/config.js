@@ -18,7 +18,7 @@
 //
 // 依赖：无。只放常量，不放 Key、本机路径、学生数据（web/ 是公开仓库）。
 
-export const VERSION = '0.6.3';
+export const VERSION = '0.7.0';
 export const APP_NAME = 'Emma 的数学老师';
 export const DB_NAME = 'emmamath', DB_VERSION = 1;
 export const LS_PREFIX = 'emmamath.';
@@ -93,5 +93,8 @@ export const DOUBAO_ASR = {
 // dailyCapUSD: budget.js stops paid calls once today's estimate reaches it (0 stops them all).
 // asr: who turns her voice into text ('poe' | 'doubao'); doubao: { appId, accessKey } from the Volcengine console
 // (resourceId optional). Both only matter for voice.js.
+// v0.7 语音照搬英语 App（voice-input.js）：asrProvider 'auto'（填了 doubaoToken 就用豆包流式）| 'poe'；doubaoAppId、doubaoToken、
+// doubaoCluster 和英语 App 同名，数学 App 没填时开机从英语 App 拿（asrFrom 'english'）。asr、doubao 是 v0.3 的旧字段，不再用。
 export const DEFAULT_SETTINGS = { poeUrl: '', poeKey: '', taskModels: {}, dailyCapUSD: 0.4, mock: false,
-  asr: 'poe', doubao: { appId: '', accessKey: '' } };
+  asr: 'poe', doubao: { appId: '', accessKey: '' },
+  asrProvider: 'auto', doubaoAppId: '', doubaoToken: '', doubaoCluster: '', asrFrom: '' };

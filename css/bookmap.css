@@ -1,0 +1,32 @@
+/* 课本地图（v0.7，ui-textbook.js） */
+.tb-book{color:var(--faint);margin-top:-6px}
+.tb-at{margin:10px 0 14px}
+.tb-sum{list-style:none;margin:0 0 10px;padding:0;display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.tb-sum li{border:1px solid var(--rule);border-radius:12px;padding:10px 8px;text-align:center;display:flex;flex-direction:column;gap:2px}
+.tb-sum b{font:600 24px/1.1 var(--sans)}
+.tb-sum span{font-size:13px;color:var(--muted)}
+.tb-sum .ok b{color:var(--good)}
+.tb-sum .weak b{color:var(--accent)}
+.tb-sum .ahead b{color:var(--faint)}
+.tb-hint{margin:4px 0 0}
+.tb-tools{margin:12px 0 4px;align-items:center}
+.tb-tools .text-btn{display:inline-flex;align-items:center;gap:6px}
+.tb-pick{color:var(--accent)}
+.tb-ch{margin-top:18px}
+.tb-rows{list-style:none;margin:0;padding:0}
+.tb-row{width:100%;display:flex;align-items:center;gap:12px;min-height:52px;padding:8px 4px;border-bottom:1px solid var(--rule);text-align:left;color:var(--ink);background:none}
+.tb-row:disabled{opacity:1;cursor:default}
+.tb-dot{flex:none;width:12px;height:12px;border-radius:50%;border:2px solid var(--faint)}
+.tb-row.ok .tb-dot{background:var(--good);border-color:var(--good)}
+.tb-row.weak .tb-dot{background:var(--accent);border-color:var(--accent)}
+.tb-row.unseen .tb-dot{border-color:var(--accent);border-style:dashed}
+.tb-row.ahead{color:var(--faint)}
+.tb-name{flex:1;min-width:0;font-size:17px}
+.tb-state{flex:none;font-size:14px;color:var(--muted)}
+.tb-row.weak .tb-state{color:var(--accent)}
+.tb-row.unseen .tb-state{color:var(--accent)}
+.tb-row.at{background:var(--tag-bg);border-radius:10px}
+.tb-row.at .tb-name{font-weight:600}
+.tb-row.picking{cursor:pointer}
+.tb-chev{flex:none;width:18px;height:18px;color:var(--faint)}
+@media (max-width:420px){.tb-sum b{font-size:20px}.tb-name{font-size:16px}}

@@ -4,7 +4,8 @@
 //   teacherSystem({ profileText, progress, exam, tags }) -> string    system prompt for every chat turn
 //   probeUser(point) -> string            the hidden first user turn when the teacher starts a talk on a weak point
 //   problemContext({ problem, diagnosis, step }) -> string   hidden context when she asks about a problem (step: where she paused)
-//   splitReply(text) -> { display, practice, notes }   strips 【练习】 and 【记录】 lines; display is what she reads
+//   splitReply(text) -> { display, practice, notes, progress }   strips 【练习】【记录】【进度】 lines; display is what she reads
+//     progress（v0.7）：她说了课上学到哪，老师写的节编号，'' 没有
 //     practice: { q, answer, answer_kind, form } | null      notes: [{ kind: 'gap' | 'ok', tag, point, note }]
 //   visibleSoFar(text) -> string          while streaming: the text without a started hidden line
 //   QUICK_REPLIES                         the buttons under a teacher message
@@ -16,7 +17,7 @@ import { parseModelJSON } from './ai.js';
 
 export const QUICK_REPLIES = ['懂了', '还是不懂', '举个例子', '出一道题考考我'];
 
-export function teacherSystem({ profileText = '', progress = '', exam = '', tags = [] } = {}) {
+export function teacherSystem({ profileText = '', progress = '', exam = '', tags = [], book = '' } = {}) {
   const tagList = tags.length ? tags.map(t => `${t.id}：${t.name}`).join('\n') : '（没有）';
   return `你是 Emma 的私人数学老师。她是北京一所初中的初一女生，用 2024 版人教版七年级上册。你已经教了她一段时间，了解她（见最后“你知道的她”）。
 
@@ -35,28 +36,50 @@ export function teacherSystem({ profileText = '', progress = '', exam = '', tags
 
 格式：中文，句子短。数学式写在行内的 \\( \\) 里，不用 \\[ \\]。要点可以用“- ”开头列，最多 4 条。不用标题、不用表格、不用加粗。
 
-两个隐藏行（她看不到，程序处理，写在回复最后，每种最多一行）：
+隐藏行（她看不到，程序处理，写在回复最后，每种最多一行）：
 - 她说“出一道题考考我”，或者你觉得该让她当场练一下时，最后一行写
 【练习】{"q":"题目，数学式用 \\\\( \\\\)","answer":"只写最后结果，比如 -16、4a+3b、x=2、3或7","answer_kind":"number|expr|equation|set|choice|compare|text","form":""}
 题目只考你们刚聊的那个点，数字简单，答案自己算两遍。出了题，正文里就不要再写答案。
 - 这一轮你看出她哪里没懂、或者哪里其实懂了，最后一行写
 【记录】{"kind":"gap 或 ok","tag":"从下面的错因标签里选一个 id，没有合适的写空","point":"知识点，一句话","note":"你看到的证据，一句话"}
+- 她说了课上学到哪一节，最后一行写
+【进度】{"section":"人教版七上的节编号，比如 2.3.1"}
 
 你知道的她：
 ${profileText || '还不太了解她。多问一句她是怎么想的。'}
 
 现在学到：${progress || '不确定，大约在第三章“代数式”'}
-${exam ? `考试：${exam}` : ''}
+${book ? `${book}
+` : ''}${exam ? `考试：${exam}` : ''}
 错因标签：
 ${tagList}`;
 }
 
 export function probeUser(point = {}) {
+  // v0.7 课本小卡“课上学到哪了”：只问进度和听课哪里不懂
+  if (point.kind === 'progress') {
+    return `（这一句是程序发的，她看不到。）请你主动和她聊一两句：打个招呼，问问她这几天数学课学到哪一节了、有没有哪里听得不太懂。她说了学到哪，就按约定写【进度】。语气轻松。这一条不要讲解，也不要出【练习】。`;
+  }
   const name = point.name || point.point || '最近学的内容';
   const evidence = (point.evidence || []).slice(0, 3).join('；');
   return `（这一句是程序发的，她看不到。）请你主动开启一段 3 分钟左右的小对话，帮她弄清这个点：${name}。
 ${evidence ? `你看到的证据：${evidence}。` : ''}${point.opener ? `\n你在教学笔记里计划过开场这样问她：${point.opener}（可以用自己的话说）。` : ''}
 第一句打个招呼，用一两句话说为什么想和她聊这个（可以提证据，语气轻松，不像在检查）。然后问她一个能看出她怎么想的小问题，等她回答。这一条不要讲解，也不要出【练习】。`;
+}
+
+// v0.7 “我的问题”里点“和我弄清楚”：老师先开口，把这道题弄清楚，给明确结论，不推给别人
+export const SETTLE_ASK = {
+  'mine-right': '她觉得自己是对的，学校老师批的是错。请你自己从头认真算一遍，明确告诉她结论：如果她对，就说她对，并说清楚为什么对；如果她错，指出错在哪一步、为什么，讲清楚。',
+  flagged: '她觉得这道题（或者我之前的讲解）有问题。请你认真重新看题、重新算，明确告诉她结论：题目和答案到底是什么，之前哪里讲得不对就直接承认并讲对。',
+  'still-lost': '之前讲完她还是不太懂。请换一个完全不同的讲法（比如举一个更简单的数的例子，或者画个数轴、打个比方），一次只讲一个点，讲完问她一个小问题确认。',
+  unsure: '这道题之前没核对清楚。请你自己从头认真算一遍，给出明确的答案和讲解。',
+  // 讲题最后一屏“讲给我听”：让她当小老师（自己讲一遍，记得最牢）
+  teachback: '她刚把这道题弄明白。请她用自己的话，把最关键的那一步讲给你听，就像她在给同学讲。先只问这一句，等她讲。她讲完，具体说她讲对的地方，再补上她漏掉的一点。',
+};
+export function settleUser(reason = 'unsure') {
+  if (reason === 'teachback') return `（这一句是程序发的，她看不到。）${SETTLE_ASK.teachback}第一句简短、轻松。这一条不要讲解，也不要出【练习】。`;
+  return `（这一句是程序发的，她看不到。）她从“我的问题”里点开了这道题，想把它弄清楚。${SETTLE_ASK[reason] || SETTLE_ASK.unsure}
+第一句直接进入正题，不寒暄太久。要有把握地讲，不要让她去问别人。`;
 }
 
 export function problemContext({ problem = {}, diagnosis = {}, step = '' } = {}) {
@@ -76,7 +99,7 @@ export function problemContext({ problem = {}, diagnosis = {}, step = '' } = {})
   return lines.filter(Boolean).join('\n');
 }
 
-const HIDDEN = /^[ \t]*【(练习|记录)】\s*(\{[\s\S]*?\})\s*$/gm;
+const HIDDEN = /^[ \t]*【(练习|记录|进度)】\s*(\{[\s\S]*?\})\s*$/gm;
 
 function parseLoose(json) {
   try { return parseModelJSON(json); } catch { return null; }
@@ -84,24 +107,26 @@ function parseLoose(json) {
 
 export function splitReply(text) {
   const raw = String(text ?? '');
-  let practice = null;
+  let practice = null, progress = '';
   const notes = [];
   const display = raw.replace(HIDDEN, (_, kind, json) => {
     const o = parseLoose(json);
     if (o && kind === '练习' && String(o.q || '').trim() && String(o.answer || '').trim() && !practice) {
       practice = { q: String(o.q).trim(), answer: String(o.answer).trim(), answer_kind: String(o.answer_kind || '').trim(), form: String(o.form || '').trim() };
+    } else if (o && kind === '进度' && /^\d+(\.[\dP]+)*$/.test(String(o.section || '').trim())) {
+      progress = String(o.section).trim();
     } else if (o && kind === '记录' && (o.kind === 'gap' || o.kind === 'ok')) {
       notes.push({ kind: o.kind, tag: String(o.tag || '').trim(), point: String(o.point || '').trim(), note: String(o.note || '').trim() });
     }
     return '';
-  }).replace(/【(练习|记录)】[\s\S]*$/, '').replace(/\n{3,}/g, '\n\n').trim();
-  return { display, practice, notes };
+  }).replace(/【(练习|记录|进度)】[\s\S]*$/, '').replace(/\n{3,}/g, '\n\n').trim();
+  return { display, practice, notes, progress };
 }
 
 // While the reply streams in, a hidden line may be half written: show everything before it
 export function visibleSoFar(text) {
   const s = String(text ?? '');
-  const i = s.search(/【(练|记)|【$/);
+  const i = s.search(/【(练|记|进)|【$/);
   return (i >= 0 ? s.slice(0, i) : s).trimEnd();
 }
 

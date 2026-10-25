@@ -71,7 +71,7 @@
 // 读 ctx.flow.get() 的这些字段（确认屏写）：problem（她确认过的题）、diagnose 的 promise（diagnose / diagnosing /
 // diagnosePromise 任一个名字）或已经回来的 diagnosis、crop（这道题的截图 dataURL，可没有）、source、queue（这一页她挑了
 // 要讲的题，按顺序：[idx] 或 [{ photoId, idx }]）。写回：explain（本文件的状态，纯数据）、queue。
-import { h, icon, mathText, toast, skBars } from './ui-dom.js';
+import { h, icon, mathText, toast, skBars, teacherAvatar } from './ui-dom.js';
 import { check, compute } from './mathcheck.js';
 import { plain } from './mathview.js';
 import * as NB from './notebook.js';
@@ -128,7 +128,7 @@ export const COPY = {
   againIntro: '没关系。再看一遍这两句。',
   againLater: '先收进本子，明天换个讲法再来。',
   saveNow: '先收进本子',
-  askTeacher: '记下来问学校老师',
+  askTeacher: '放进“我的问题”，换个讲法',
   flag: '这题有问题',
   softSplit: '这道题几种算法得出的答案不太一样，我按最可能对的讲。拿不准的话，也可以问问学校老师。',
   flaggedTwin: '记下了，这道题不算。',
@@ -143,12 +143,12 @@ export const COPY = {
   tryAgain: '再试一次。',
   saving: '正在收进本子……',
   saveFailed: '没存上，再试一次。',
-  unsure: '这道我拿不准，记下来问问学校老师。',
-  unsureMore: '问过学校老师以后，以学校老师讲的为准。',
+  unsure: '这道我放进“我的问题”了。',
+  unsureMore: '点“问我”，我们一起把它核对清楚。',
   flaggedTitle: '记下了。',
-  flaggedMore: '这道题先不练，家长会看到。',
-  confusedTitle: '记下来了。',
-  confusedMore: '问学校老师的时候带上这道题。',
+  flaggedMore: '这道题先不练，放进“我的问题”。点“问我”，我们一起看看它哪里有问题。',
+  confusedTitle: '放进“我的问题”了。',
+  confusedMore: '没关系，有的地方要换个讲法才通。点“问我”，我们现在就聊，或者以后从“我的问题”里点开。',
   direct: '直接讲吧',
   saved: '收进本子了。',
   merged: '这个坑本子里已经有了，这道题放在它下面。',
@@ -158,6 +158,7 @@ export const COPY = {
   tomorrowRetell: '明天换个讲法再来，把原题再做一遍。',
   nextOne: '下一道',
   askMe: '还有不明白的？问我',
+  teachBack: '讲给我听',
   stop: '今天先到这儿',
   backToPage: '回到这一页',
   retry: '再试一次',
@@ -1088,6 +1089,11 @@ export function createExplain(ctx) {
   // ------------------------------------------------ 有问题？问我（v0.6.0）
 
   // 第一次问时记下对话 id（存进 flow），带着这一步去 chat；回来时 show() 原样接着
+  function teachBack(c) {
+    if (cur !== c) return;
+    ctx.go('chat', { ...askParams(c.st, c.problem, { twin: null }), chatId: '', step: '', settle: 'teachback', fresh: Date.now() });
+  }
+
   function askChat(c) {
     if (cur !== c) return;
     if (!c.st.chatId) dispatch({ type: 'chat-id', id: newId('c') });
@@ -1647,9 +1653,11 @@ export function createExplain(ctx) {
     // v0.3：讲完还有不明白的，接着问老师（chat problem 模式带上这道题和诊断：同坑合并时卡上存的是第一道题，所以直接传刚讲的这道）。
     // 诊断拿不准、她说“这题有问题”的不接（CONTRACTS 9）。v0.6.0：和讲题中途问的是同一段对话（askChat，chatId）
     const r = st.result || {};
+    // v0.7 讲给我听：她当小老师，用自己的话讲一遍关键那一步（老师先开口，另开一段）
     const askMe = st.cardId && r.ask !== 'unsure' && r.ask !== 'flagged'
-      ? h('div', { className: 'ex-askme' }, h('button', { type: 'button', className: 'text-btn accent', on: { click: () => askChat(c) } },
-        icon('chat'), h('span', { text: COPY.askMe })))
+      ? h('div', { className: 'ex-askme' },
+        h('button', { type: 'button', className: 'text-btn accent', on: { click: () => askChat(c) } }, icon('chat'), h('span', { text: COPY.askMe })),
+        !r.ask ? h('button', { type: 'button', className: 'text-btn accent', on: { click: () => teachBack(c) } }, teacherAvatar('sm'), h('span', { text: COPY.teachBack })) : null)
       : null;
     // v0.6.0：举一反三，再来一道（做满 3 道就不出了）；做过的说一句
     const sum = extraSummary(st.extra);

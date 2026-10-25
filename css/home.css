@@ -46,10 +46,13 @@
 
 /* v0.3 私人老师：主动找她聊的小卡（左边一道绿线，像老师在本子边上写的一句），和一直在的“有问题，问我” */
 .home-teacher{display:flex;flex-direction:column;align-items:flex-start;gap:16px;margin-top:28px;padding-top:24px;border-top:1px solid var(--rule)}
-.home-probe{align-self:stretch;padding:14px 18px 12px;border-left:3px solid var(--accent);background:color-mix(in srgb,var(--tag-bg) 55%,var(--paper));border-radius:0 8px 8px 0}
+.home-probe{align-self:stretch;display:flex;gap:14px;align-items:flex-start;padding:14px 18px 12px;border-left:3px solid var(--accent);background:color-mix(in srgb,var(--tag-bg) 55%,var(--paper));border-radius:0 8px 8px 0}
 .home-probe-title{font:600 20px/1.4 var(--serif);text-wrap:pretty}
 .home-probe-why{margin-top:4px;font-size:16px;line-height:1.55;color:var(--muted)}
 .home-probe .btn-row{margin-top:10px}
+.home-probe-body{flex:1;min-width:0}
+.home-probe-av{width:44px;height:44px}
+.home-ask .t-avatar{margin-right:2px}
 .home-ask{min-height:52px;padding:0 22px 0 18px}
 
 @media (min-width:700px){

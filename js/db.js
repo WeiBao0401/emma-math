@@ -299,9 +299,10 @@ function withoutKey(rec) {
   if (!rec || rec.key !== 'settings' || !isPlainObject(rec.value)) return rec;
   const d = rec.value.doubao;
   const hasDoubaoKey = isPlainObject(d) && 'accessKey' in d;
-  if (!('poeKey' in rec.value) && !hasDoubaoKey) return rec;
+  if (!('poeKey' in rec.value) && !('doubaoToken' in rec.value) && !hasDoubaoKey) return rec;
   const value = { ...rec.value };
   delete value.poeKey;
+  delete value.doubaoToken;   // v0.7 豆包流式的 Access Token（和英语 App 同一套字段）
   if (hasDoubaoKey) { value.doubao = { ...d }; delete value.doubao.accessKey; }
   return { ...rec, value };
 }
@@ -473,10 +474,12 @@ export async function openStore({
         const localSettings = await run('kv', 'readonly', s => reqResult(s.kv.get('settings')));
         const localKey = localSettings && isPlainObject(localSettings.value) ? localSettings.value.poeKey : undefined;
         const localDoubao = localSettings && isPlainObject(localSettings.value) && isPlainObject(localSettings.value.doubao) ? localSettings.value.doubao.accessKey : undefined;
+        const localToken = localSettings && isPlainObject(localSettings.value) ? localSettings.value.doubaoToken : undefined;
         const kv = kvIn.map(r => {
           if (r.key !== 'settings' || !isPlainObject(r.value)) return r;
           const value = { ...r.value };
           if (localKey) value.poeKey = localKey;
+          if (localToken) value.doubaoToken = localToken;
           if (localDoubao) value.doubao = { ...(isPlainObject(value.doubao) ? value.doubao : {}), accessKey: localDoubao };
           return { ...r, value };
         });

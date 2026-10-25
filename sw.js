@@ -4,20 +4,20 @@
 //   这里的缓存一律叫 "emmamath-…"，也只删 "emmamath-" 开头的旧缓存。
 //   绝不能叫 "emma-…"：英语老师的 sw.js 会删掉所有 "emma-" 开头、不是它自己版本的缓存。
 // Poe、中转站的请求是别的源，直接走网络，这里不碰。照片和错题在 IndexedDB 里，也不经过这里。
-const VERSION = '0.6.3';
+const VERSION = '0.7.0';
 const CACHE = 'emmamath-' + VERSION;
 // 要离线能用的全部文件。web/js、web/css、web/curriculum 下新加文件要加进来（测试检查两个方向：列了的都存在，存在的都列了）。
 // curriculum/ 是公开的课本目录和错因表（几十 KB），跟着版本走，不单独分缓存。
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'icon-180.png', 'icon-192.png', 'icon-512.png',
   'css/base.css', 'css/math.css', 'css/keypad.css',
-  'css/home.css', 'css/capture.css', 'css/explain.css', 'css/practice.css', 'css/book.css', 'css/onboard.css', 'css/parent.css', 'css/chat.css', 'css/paper.css',
+  'css/home.css', 'css/capture.css', 'css/explain.css', 'css/practice.css', 'css/book.css', 'css/onboard.css', 'css/parent.css', 'css/chat.css', 'css/paper.css', 'css/bookmap.css',
   'js/app.js', 'js/nav.js', 'js/ui-dom.js', 'js/flow.js',
   'js/config.js', 'js/ai.js', 'js/budget.js', 'js/kid-errors.js', 'js/mock.js',
   'js/db.js', 'js/image.js', 'js/mathcheck.js', 'js/mathview.js',
   'js/prompts.js', 'js/pipeline.js', 'js/notebook.js', 'js/curriculum.js',
   'js/keypad.js',
-  'js/teacher.js', 'js/md.js', 'js/voice.js', 'js/profile.js', 'js/paper.js', 'js/reflect.js', 'js/notes.js',
+  'js/teacher.js', 'js/md.js', 'js/bookmap.js', 'js/ui-bookmap.js', 'js/voice.js', 'js/voice-input.js', 'js/voice-stream.js', 'js/pcm-tap-worklet.js', 'js/profile.js', 'js/paper.js', 'js/reflect.js', 'js/notes.js',
   'js/ui-home.js', 'js/ui-capture.js', 'js/ui-explain.js', 'js/ui-practice.js', 'js/ui-book.js', 'js/ui-onboard.js', 'js/ui-parent.js', 'js/ui-chat.js', 'js/ui-paper.js',
   'curriculum/sections.json', 'curriculum/errors.json',
 ];

@@ -160,17 +160,61 @@ function mathPlain(latex) {
 // \( … \), \[ … \] and, for models that use them anyway, $$ … $$ and $ … $
 const SPLIT = /\\\(([\s\S]*?)\\\)|\\\[([\s\S]*?)\\\]|\$\$([\s\S]*?)\$\$|\$([^$\n]+?)\$/g;
 
+// v0.7 (Wei 10-25: “分数提取完以后显示得不好”): text outside \( \) still gets its math drawn. A bare LaTeX run
+// (\frac{1}{3}x, a model that forgot the delimiters) is drawn whole; a typed fraction like 1/3, (x−1)/2, 3x/4 is stacked;
+// x^2 is raised. Dates (2026/10/24), units (km/h) and words (and/or) are left alone.
+const CJK = '　-〿一-鿿＀-￯“”‘’\n';
+const RUN = new RegExp(`[^${CJK}]+`, 'g');
+const OPERAND = '\\([^()\\n]{1,30}\\)';
+const LOOSE = new RegExp(`(?<![0-9a-zA-Z./\\\\])(${OPERAND}|[0-9]+(?:\\.[0-9]+)?[a-zA-Z]{0,2}|[a-zA-Z])/(${OPERAND}|[0-9]+(?:\\.[0-9]+)?|[a-zA-Z])(?![0-9./])`
+  + `|([0-9a-zA-Z)])\\^(\\{[^{}\\n]{1,12}\\}|[-−]?[0-9]+|[a-zA-Z])`, 'g');
+const unwrap = t => (/^\(.*\)$/.test(t) ? t.slice(1, -1) : t);
+// a run of text between Chinese characters -> LaTeX when it holds math the delimiters missed, else null
+function looseTex(run) {
+  let hit = /\\[a-zA-Z]+/.test(run);
+  // x=-11, 2a+3b: a lone letter with an operator and nothing wordy is a formula too (the minus becomes −)
+  if (/^[0-9a-zA-Z()+\-−×÷=<>.|,\s]+$/.test(run) && /(?<![a-zA-Z])[a-zA-Z](?![a-zA-Z])/.test(run) && /[=+\-−×÷<>]/.test(run) && !/[a-zA-Z]{2}/.test(run)) hit = true;
+  const tex = run.replace(LOOSE, (all, num, den, base, exp, at, str) => {
+    if (num !== undefined) {
+      if (/^[a-zA-Z]$/.test(num) && /^[a-zA-Z]$/.test(den) && (/[a-zA-Z]/.test(str[at - 1] || '') || /[a-zA-Z]/.test(str[at + all.length] || ''))) return all;
+      if (/^[a-zA-Z]$/.test(den) && /[a-zA-Z]/.test(str[at + all.length] || '')) return all;   // km/h, and/or
+      hit = true;
+      return `\\frac{${unwrap(num)}}{${unwrap(den)}}`;
+    }
+    hit = true;
+    return `${base}^{${exp.replace(/^\{|\}$/g, '')}}`;
+  });
+  if (!hit || /\d+\/\d+\/\d+/.test(run) || /:\/\//.test(run)) return null;
+  // an English sentence around a fraction: only the fraction is math
+  if (/(?<!\\)\b[a-zA-Z]{3,}\b/.test(run.replace(/\\[a-zA-Z]+/g, ''))) return { parts: true };
+  return tex;
+}
+function textPart(s) {
+  let out = '', last = 0;
+  for (const m of s.matchAll(RUN)) {
+    out += esc(s.slice(last, m.index));
+    last = m.index + m[0].length;
+    const run = m[0], body = run.trim();
+    const tex = body ? looseTex(body) : null;
+    if (!tex) { out += esc(run); continue; }
+    if (tex.parts) { out += esc(run); continue; }
+    const lead = /^\s*/.exec(run)[0], tail = /\s*$/.exec(run)[0];
+    out += esc(lead) + renderMath(tex) + esc(tail);
+  }
+  return (out + esc(s.slice(last))).replace(/\n/g, '<br>');
+}
+
 export function renderText(text) {
   const s = String(text ?? '');
   let out = '', last = 0;
   for (const m of s.matchAll(SPLIT)) {
-    out += esc(s.slice(last, m.index)).replace(/\n/g, '<br>');
+    out += textPart(s.slice(last, m.index));
     const display = m[2] !== undefined || m[3] !== undefined;
     const body = m[1] ?? m[2] ?? m[3] ?? m[4];
     out += display ? `<span class="m-display">${renderMath(body)}</span>` : renderMath(body);
     last = m.index + m[0].length;
   }
-  return out + esc(s.slice(last)).replace(/\n/g, '<br>');
+  return out + textPart(s.slice(last));
 }
 
 export function plain(text) {

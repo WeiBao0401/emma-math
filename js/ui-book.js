@@ -35,7 +35,7 @@ import { h, icon, mathText, dateCn } from './ui-dom.js';
 import { dayOf, addDays, reviewPlan, shortName, quotaFor } from './notebook.js';
 
 export const DEFAULT_BOOK_NAME = '攻克本';
-export const ASK_TITLE = '问学校老师';
+export const ASK_TITLE = '我的问题';   // v0.7（Wei 10-25）：不叫“问老师”，这里是她攒问题的地方，每一道都由我讲清楚
 export const bookName = kv => {
   const n = kv && typeof kv.peek === 'function' ? kv.peek('bookName', '') : '';
   return typeof n === 'string' && n.trim() ? n.trim() : DEFAULT_BOOK_NAME;
@@ -100,7 +100,7 @@ export function statusText(c, today = dayOf()) {
   const when = () => (c.due && c.due <= today ? '今天' : relDay(c.due, today));
   if (k === 'ask') return ASK_TITLE;
   if (k === 'beaten') return '攻克';
-  if (k === 'rest') return '自己改对的';
+  if (k === 'rest') return c.mine ? '你是对的' : '自己改对的';
   if (k === 'light') return `自己改对的 · ${when()}`;
   return c.due ? `在练 · ${when()}` : '在练';
 }
@@ -120,13 +120,20 @@ export function chapterOf(card, curriculum = null) {
 }
 
 export const ASK_REASONS = {
-  unsure: '这道我算了两遍，结果不一样。',
-  'mine-right': '你写的和我算的一样，问问学校老师是不是批错了。',
-  'still-lost': '讲完还是不太懂，听听学校老师怎么讲。',
+  unsure: '这道题我们再一起核对一遍。',
+  'mine-right': '你觉得自己是对的。',
+  'still-lost': '讲完还是不太懂。',
   flagged: '你觉得这题有问题。',
 };
 // 别的界面写的同义 reason（接线时对齐）：ui-capture 写 'maybe-right'，ui-explain 写 'confused'
 const ASK_ALIAS = { 'maybe-right': 'mine-right', mine: 'mine-right', confused: 'still-lost', wrong: 'flagged' };
+// 卡上的问题是哪一种（ASK_REASONS 的键）：unsure | mine-right | still-lost | flagged
+export function askKey(c) {
+  const at = c && c.askTeacher;
+  const raw = (at && typeof at === 'object' && (at.reason || at.code)) || (c && c.askReason) || 'unsure';
+  const k = ASK_ALIAS[raw] || raw;
+  return ASK_REASONS[k] ? k : 'unsure';
+}
 export function askReason(c) {
   const at = c && c.askTeacher;
   const raw = (at && typeof at === 'object' && (at.reason || at.code)) || (c && c.askReason) ||
@@ -221,7 +228,7 @@ export const foundText = f => FOUND_TEXT[f] || '收进本子。';
 
 export function nextText(c, today = dayOf()) {
   const k = cardKind(c);
-  if (k === 'ask') return '这道先问学校老师，不排练习。';
+  if (k === 'ask') return '先一起弄清楚，再排练习。';
   if (k === 'beaten') return '攻克了。期中、期末前各回来一次。';
   if (k === 'rest') return '先休息，考前再来一道。';
   if (!c.due) return '';
@@ -234,7 +241,20 @@ export function nextText(c, today = dayOf()) {
   return `下次复习：${when}。${what}`;
 }
 
-// “这题有问题”：下架（不排练习、不计分），进问学校老师；原来的排程留在 askTeacher.prev，家长区以后能恢复
+// 弄清楚以后（v0.7）：verdict 'mine' 她原来是对的（批改或题目的问题），不再练；'wrong' 确实错了，回到练习
+//（“这题有问题”下架前的排程在 askTeacher.prev，有就恢复，没有从第一档、明天开始）
+export function settleCard(c, verdict, { today = dayOf() } = {}) {
+  const x = structuredClone(c);
+  const at = x.askTeacher && typeof x.askTeacher === 'object' ? x.askTeacher : {};
+  const prev = at.prev || null;
+  x.askTeacher = { ...at, settled: { day: today, verdict } };
+  if (verdict === 'mine') { x.status = 'learning'; x.light = true; x.due = ''; x.mine = true; return x; }
+  if (prev && prev.status && prev.status !== 'ask') Object.assign(x, { status: prev.status, stage: prev.stage || 1, due: prev.due || addDays(today, 1), light: !!prev.light });
+  else Object.assign(x, { status: 'learning', stage: 1, due: addDays(today, 1), light: false, streak: 0 });
+  return x;
+}
+
+// “这题有问题”：下架（不排练习、不计分），进“我的问题”；原来的排程留在 askTeacher.prev，弄清楚以后恢复
 export function flagCard(c, { today = dayOf(), at = new Date().toISOString() } = {}) {
   const x = structuredClone(c);
   x.flagged = [...(Array.isArray(x.flagged) ? x.flagged : []), { day: today, at, what: 'card' }];
@@ -242,6 +262,11 @@ export function flagCard(c, { today = dayOf(), at = new Date().toISOString() } =
   x.status = 'ask';
   x.due = '';
   return x;
+}
+
+// “你问过我的”：她自己开口问的那几段（老师主动找她聊的不算），最新的在前，最多 n 段
+export function askedChats(chats, n = 8) {
+  return (Array.isArray(chats) ? chats : []).filter(x => x && x.id && x.mode !== 'probe' && x.title && x.title !== '问我').slice(0, n);
 }
 
 // ---------------------------------------------------------------- 视图共用
@@ -324,15 +349,21 @@ export function createBook(ctx) {
         g.title ? h('h2', { className: 'sec-h book-ch', text: g.title }) : null,
         h('ul', { className: 'book-rows' }, g.rows.map(rowEl))));
     }
-    if (v.ask.length) {
-      // 不写“N 道”：清单就在下面，数字只会像欠账（DESIGN 7.4 不写数字、不催）
+    // v0.7 我的问题：她提过、还没弄清的题，加上她问过我的话（kv 'chats'，最近的 8 段）
+    const asked = askedChats(ctx.kv.peek('chats', []));
+    if (v.ask.length || asked.length) {
       out.push(h('section', { className: 'book-group book-ask', id: 'book-ask' },
         h('h2', { className: 'sec-h', text: ASK_TITLE }),
-        h('p', { className: 'small book-ask-lead', text: '这几道我先不讲，也不排练习。带去问学校老师。' }),
-        h('ul', { className: 'book-rows' }, v.ask.map(r => h('li', {}, h('button', { type: 'button', className: 'book-row ask', on: { click: () => ctx.go('card', { id: r.id }) } },
+        h('p', { className: 'small book-ask-lead', text: v.ask.length ? '你提过的问题攒在这里。点开一道，我们一起把它弄清楚。' : '你问过我的都攒在这里，点开能接着聊。' }),
+        v.ask.length ? h('ul', { className: 'book-rows' }, v.ask.map(r => h('li', {}, h('button', { type: 'button', className: 'book-row ask', on: { click: () => ctx.go('card', { id: r.id }) } },
           h('span', { className: 'book-name', text: r.name }),
           h('span', { className: 'book-reason', text: r.reason }),
-          icon('chev', 'book-chev')))))));
+          icon('chev', 'book-chev'))))) : null,
+        asked.length ? h('p', { className: 'label book-asked-h', text: '你问过我的' }) : null,
+        asked.length ? h('ul', { className: 'book-rows book-asked' }, asked.map(x => h('li', {}, h('button', { type: 'button', className: 'book-row asked', on: { click: () => ctx.go('chat', { chatId: x.id }) } },
+          h('span', { className: 'book-name', text: x.title }),
+          h('span', { className: 'book-reason', text: relDay(String(x.updated || x.at || '').slice(0, 10), todayOf(ctx)) }),
+          icon('chev', 'book-chev'))))) : null));
     }
     const shelfCount = v.counts.learning + v.counts.light + v.counts.beaten;
     const later = pendingLine(pending.length, todayOf(ctx), ctx.kv.peek('exam', null));
@@ -412,9 +443,13 @@ export function createCard(ctx) {
         h('button', { type: 'button', className: 'btn', text: '我会了，考考我', on: { click: () => ctx.go('practice', { cardId: card.id }) } }),
         askMeBtn(),
         h('button', { type: 'button', className: 'text-btn', text: '这题有问题', on: { click: () => { confirming = true; renderBar(); } } })));
-    } else if (card && askConfused(card)) {
-      // 讲完还是不太懂的题：诊断是可靠的，可以接着问我（拿不准的、她点了“这题有问题”的不接）
-      barInner.replaceChildren(h('div', { className: 'book-bar-btns' }, askMeBtn()));
+    } else if (card && ask) {
+      // v0.7 我的问题：和我弄清楚；弄清楚以后她自己点结论（她原来是对的 / 确实错了，回到练习）
+      const r = askKey(card);
+      barInner.replaceChildren(h('div', { className: 'book-bar-btns' },
+        h('button', { type: 'button', className: 'btn', on: { click: () => ctx.go('chat', { mode: 'problem', cardId: card.id, settle: r }) } }, icon('chat'), h('span', { text: '和我弄清楚' })),
+        r !== 'still-lost' ? h('button', { type: 'button', className: 'text-btn', text: '我原来是对的', on: { click: () => doSettle('mine') } }) : null,
+        h('button', { type: 'button', className: 'text-btn', text: r === 'still-lost' ? '弄懂了，放进练习' : '是我错了，放进练习', on: { click: () => doSettle('wrong') } })));
     } else {
       barInner.replaceChildren();
     }
@@ -426,6 +461,23 @@ export function createCard(ctx) {
   function askMeBtn() {
     return h('button', { type: 'button', className: 'text-btn accent book-askme', on: { click: () => ctx.go('chat', { mode: 'problem', cardId: card.id }) } },
       icon('chat'), h('span', { text: '问我' }));
+  }
+
+  async function doSettle(verdict) {
+    if (!card) return;
+    const mine = token;
+    try {
+      const fresh = (await ctx.store.get('items', card.id)) || card;
+      const next = settleCard(fresh, verdict, { today: todayOf(ctx) });
+      await ctx.store.put('items', next);
+      if (mine !== token) return;
+      card = next;
+      render();
+      ctx.toast(verdict === 'mine' ? '好，这道不用再练了。' : '好，放回练习，明天先做它。');
+    } catch (e) {
+      console.warn('card settle:', (e && e.message) || e);
+      ctx.toast('没存上，再点一次。');
+    }
   }
 
   async function doFlag() {
@@ -470,9 +522,7 @@ export function createCard(ctx) {
       h('p', { className: 'book-status' }, dotsOf(card) ? dotsEl(dotsOf(card), { beaten: k === 'beaten' }) : null, h('span', { text: statusText(card, today) })),
     ];
     if (ask) {
-      // 原因里已经说了问学校老师的（批改有疑问、讲完还是不懂），不再重复一遍
-      const why = askReason(card);
-      out.push(h('p', { className: 'status-line book-ask-note' }, icon('ask'), h('span', { text: /学校老师/.test(why) ? why : `${why}记下来，带去问学校老师。` })));
+      out.push(h('p', { className: 'status-line book-ask-note' }, icon('ask'), h('span', { text: `${askReason(card)}点“和我弄清楚”，我们一起看。` })));
     }
 
     const shot = imageSrc(card.crop, urls) || imageSrc(card.thumb, urls);

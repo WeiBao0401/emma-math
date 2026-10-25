@@ -84,7 +84,7 @@
 .cap-pmark{font-size:15px;color:var(--muted)}
 .cap-pst{align-self:center}
 .cap-prow.later .cap-pst{background:transparent;border:1px solid var(--rule-strong)}
-.cap-pstem{font-size:14px;line-height:1.4;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cap-pstem{font-size:15px;line-height:1.9;color:var(--muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .cap-pthumb{flex:none;width:132px;height:68px;display:grid;place-items:center;overflow:hidden;border:1px solid var(--rule);border-radius:3px;background:var(--sk)}
 .cap-pthumb.none{display:none}
 .cap-pthumb img{display:block;width:100%;height:100%;object-fit:contain;background:#fff}

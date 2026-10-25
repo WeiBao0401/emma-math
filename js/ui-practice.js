@@ -526,7 +526,7 @@ export function createPractice(ctx) {
   function startTest(my, cards, id, today) {
     const card = cards.find(c => c.id === id);
     if (!card) return paintMsg('这张卡找不到了。', '', backBtn());
-    if (card.status === 'ask' || !str(card.diagnosis && card.diagnosis.answer)) return paintMsg('这道题要先问学校老师。', '问完学校老师，再来考自己。', backBtn());
+    if (card.status === 'ask' || !str(card.diagnosis && card.diagnosis.answer)) return paintMsg('这道题还在“我的问题”里。', '先点“问我”把它弄清楚，再来考自己。', backBtn());
     startRound(my, cards, today, { queue: [{ cardId: id, kind: 'variant', level: '远变式', levels: ['远变式', '近变式'] }], test: true, demo: !!card.demo });
   }
   const backBtn = () => h('button', { type: 'button', className: 'btn', text: '回去', on: { click: quit } });

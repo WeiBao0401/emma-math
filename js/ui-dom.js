@@ -83,10 +83,26 @@ export const ICONS = {
   sun: svg('<circle cx="12" cy="12" r="4"/><path d="M12 3.5v2M12 18.5v2M3.5 12h2M18.5 12h2M6 6l1.4 1.4M16.6 16.6 18 18M6 18l1.4-1.4M16.6 7.4 18 6"/>'),
   // v0.3 问我：说话、发送、停、对话
   mic: svg('<rect x="9" y="3.5" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0"/><path d="M12 18v2.5"/>'),
+  keyboard: svg('<rect x="3" y="6.5" width="18" height="11" rx="2"/><path d="M7 10h.01M10.3 10h.01M13.7 10h.01M17 10h.01M8 14h8"/>'),
   send: svg('<path d="M12 19.5V5"/><path d="M6 10.5 12 4.5l6 6"/>'),
   stop: svg('<rect x="7" y="7" width="10" height="10" rx="1.5"/>'),
   chat: svg('<path d="M4.5 6.5A2 2 0 0 1 6.5 4.5h11a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H11l-4.5 3.5V16.5h0a2 2 0 0 1-2-2z"/><path d="M8.5 9h7M8.5 12h4.5"/>'),
 };
+
+// v0.7 老师的头像（Wei 10-25：“聊一聊加一个老师的图标，像人和人在聊”）：圆脸、短发、眼镜，固定图形，颜色跟主题走
+const AVATAR = '<svg viewBox="0 0 40 40" aria-hidden="true" focusable="false">'
+  + '<circle cx="20" cy="20" r="20" class="av-bg"/>'
+  + '<path d="M7 37.5c1.8-6.8 7-10 13-10s11.2 3.2 13 10A20 20 0 0 1 7 37.5z" class="av-shirt"/>'
+  + '<circle cx="20" cy="17.5" r="8.2" class="av-face"/>'
+  + '<path d="M11.6 17.2c-.4-6.2 3.4-9.7 8.4-9.7s8.9 3.3 8.4 9.7c-1.3-2.9-3.7-4.6-6.4-4.9-1.4 1.6-4.6 2.6-8 2.4-.9.6-1.8 1.4-2.4 2.5z" class="av-hair"/>'
+  + '<circle cx="16.8" cy="18.4" r="2.5" class="av-glass"/><circle cx="23.2" cy="18.4" r="2.5" class="av-glass"/><path d="M19.3 18.2h1.4" class="av-glass"/>'
+  + '<path d="M17.6 22.3q2.4 1.7 4.8 0" class="av-smile"/></svg>';
+export function teacherAvatar(className = '') {
+  const el = document.createElement('span');
+  el.className = 't-avatar' + (className ? ' ' + className : '');
+  el.innerHTML = AVATAR;   // 固定图形
+  return el;
+}
 
 // -> <svg class="icon extra">；className 加在 "icon" 后面
 export function icon(name, className = '') {
