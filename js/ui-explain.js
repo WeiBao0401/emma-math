@@ -131,6 +131,7 @@ export const COPY = {
   askTeacher: '记下来问学校老师',
   flag: '这题有问题',
   softCheck: '这道题我核对得不太确定。你觉得哪里不对，点右上角“有问题？问我”和我说。',
+  softSplit: '这道题几种算法得出的答案不太一样，我按最可能对的讲。拿不准的话，也可以问问学校老师。',
   flaggedTwin: '记下了，这道题不算。',
   sentenceLabel: '补全这句话',
   sentenceRight: '对，就是这样。',
@@ -1585,7 +1586,7 @@ export function createExplain(ctx) {
     const d = st.diagnosis;
     const cv = contrast(p, d);
     // 核对没能确认（核对失败、核对的模型拿不准、文字答案比不了）：照样讲，提一句她可以说（Wei 10-25）
-    const soft = d.checked === 'soft' ? h('p', { className: 'small ex-soft', text: COPY.softCheck }) : null;
+    const soft = d.checked === 'soft' ? h('p', { className: 'small ex-soft', text: /split|retaught/.test(d.checkWhy || '') ? COPY.softSplit : COPY.softCheck }) : null;
     const col = (lab, rows) => h('div', { className: 'ex-vs-col' }, h('p', { className: 'label', text: lab }),
       rows.map(r => h('p', { className: 'ex-vs-line' + (r.hi ? ' hi' : '') }, mathText(r.text, { className: r.hi ? 'marked' : '' }))));
     const steps = d.explain || [];

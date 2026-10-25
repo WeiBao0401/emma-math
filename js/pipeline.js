@@ -21,9 +21,10 @@
 //             hint1: { q, options, answer }, hint2, explain, self_explain: { q, options, answer }, remember,
 //             twin: { q, answer, answer_kind, form, trap_answer } | null, doubt,
 //             checked: 'program' | 'models' | 'soft' | 'unsure', model, checkModel, checkWhy }
-//             'soft' = could not confirm (the check failed, the checker was unsure, wording not comparable): teach it,
-//             with a quiet line that she can flag it. 'unsure' = three models, three answers, or a sure-wrong answer that
-//             could not be taught again: “问问学校老师”
+//             'soft' = not fully confirmed (the check failed, the checker was unsure, wording not comparable, three
+//             models gave three answers, or the first explanation was wrong and was taught again): still taught, with
+//             a quiet line. diagnose never returns 'unsure' (Wei 10-25: always help); 'unsure' only comes from her own
+//             “我觉得我是对的” on the confirm screen
 // Variant   { level, q, answer, answer_kind, form, unit, trap, trap_answer, steps, checked: 'program' | 'models' }
 import { TASKS } from './config.js';
 import { check, compute } from './mathcheck.js';
@@ -190,19 +191,25 @@ export function createPipeline({ ai, curriculum = {} } = {}) {
     return { d, v, tv, model: r.model };
   }
 
+  // Wei 10-25: always teach. A refusal helps her zero; a best-effort explanation with a light caveat helps a lot.
+  // Sure it is wrong (the program's answer, or two models against one): teach again with that answer given. Anything
+  // still unconfirmed is taught as 'soft' with the most likely right answer; nothing ends as “can't explain”.
   async function diagnose(problem, imageURL, { signal } = {}) {
     let { d, v, tv, model } = await diagnoseOnce(problem, imageURL, undefined, signal);
-    // sure it is wrong and we know the right answer: teach again with that answer given (one more call, the fallback model)
     if (v.status === 'conflict' && str(v.other)) {
+      const right = v.other, by = v.by;
       try {
-        const again = await diagnoseOnce({ ...problem, knownAnswer: v.other }, imageURL, TASKS.explain.fallback, signal);
+        const again = await diagnoseOnce({ ...problem, knownAnswer: right }, imageURL, TASKS.explain.fallback, signal);
         if (good(again.v)) ({ d, v, tv, model } = again);
-        else if (check(again.d.answer, v.other, { kind: again.d.answer_kind || '' }).ok === true) ({ d, tv, model } = again), (v = { status: 'models', by: v.by });
-      } catch (e) { if (e && e.code === 'abort') throw e; }
+        else { ({ d, tv, model } = again); d = { ...d, answer: right }; v = { status: 'soft', by, why: 'retaught', other: right }; }
+      } catch (e) {
+        if (e && e.code === 'abort') throw e;
+        d = { ...d, answer: right }; v = { status: 'soft', by, why: 'retaught', other: right };
+      }
     }
-    const checked = good(v) ? v.status : v.status === 'soft' ? 'soft' : 'unsure';
-    const twin = (good(v) || checked === 'soft') && d.twin && good(tv) ? { ...d.twin, checked: tv.status } : null;
-    return { ...d, twin, checked, model, checkModel: v.by, other: v.other || '', checkWhy: v.why || v.status };
+    const checked = good(v) ? v.status : 'soft';
+    const twin = d.twin && good(tv) ? { ...d.twin, checked: tv.status } : null;
+    return { ...d, twin, checked, model, checkModel: v.by, other: v.other || '', checkWhy: good(v) ? '' : (v.why || v.status) };
   }
 
   async function variants(card, levels = ['同构', '近变式', '近变式', '辨析'], { signal } = {}) {
