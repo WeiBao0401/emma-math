@@ -52,6 +52,7 @@ import { noteForTeacher, focusPoint } from './reflect.js';
 import { latestNote, isMock, NOTES_KEY } from './notes.js';
 import { textbookMap, teacherLine } from './bookmap.js';
 import { quizUser, normalizeSpec, specLine, makeQuiz, QUIZ_CAP } from './quiz.js';
+import { createWaitFun } from './waitfun.js';
 
 export const CHATS_CAP = 50;
 export const QUIZ_REPLIES = ['你定吧', '标准卷就好', '结合我的薄弱点'];
@@ -649,7 +650,7 @@ export function createChat(ctx) {
         h('div', { className: 'btn-row' }, h('button', { type: 'button', className: 'btn quiet', text: '再出一次', on: { click: () => { const c = chat; if (c) startQuiz(c, m); } } }))];
     } else if (job || m.quizState === 'making') {
       const t = !job || job.step === 'make' ? '我在出题，大约一分钟……' : `在核对答案 ${job.done || 0} / ${job.total || 0}……`;
-      status = h('p', { className: 'small dots', text: t });
+      status = [h('p', { className: 'small dots', text: t }), job ? (job.fun || (job.fun = createWaitFun(ctx))) : null];
     } else {
       status = h('div', { className: 'btn-row' }, h('button', { type: 'button', className: 'btn quiet', text: '接着出', on: { click: () => { const c = chat; if (c) startQuiz(c, m); } } }));
     }

@@ -1,0 +1,23 @@
+/* 等一等（v0.9，waitfun.js）：等识别、等讲解、等出卷时的小卡 */
+.wf{margin-top:28px;padding:16px 18px 18px;border:1px solid var(--rule);border-radius:14px;background:color-mix(in srgb,var(--tag-bg) 45%,var(--paper))}
+.wf-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.wf-hi{font-size:14px;color:var(--muted)}
+.wf-kind{font:600 17px/1.4 var(--sans);color:var(--ink)}
+.wf-next{margin-left:auto;font-size:14px}
+.wf-body{margin-top:12px}
+.wf-word{display:inline-flex;align-items:center;gap:10px;font:600 32px/1.2 var(--serif);color:var(--accent);background:none;padding:2px 0}
+.wf-say{font-size:20px}
+.wf-poem{font:500 24px/1.5 var(--serif);color:var(--ink);letter-spacing:.04em}
+.wf-q{margin-top:8px;font-size:16px;color:var(--muted)}
+.wf-opts{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}
+.wf-opt{min-height:48px;padding:8px 16px;border:1px solid var(--rule-strong);border-radius:12px;background:var(--paper);color:var(--ink);font:17px/1.4 var(--sans);text-align:left}
+.wf-opt.right{border-color:var(--good);background:color-mix(in srgb,var(--good) 14%,var(--paper));color:var(--good)}
+.wf-opt.wrong{border-color:var(--danger);color:var(--danger)}
+.wf-opts.answered .wf-opt:not(.right):not(.wrong){opacity:.45}
+.wf-after{margin-top:10px;font-size:16px;color:var(--ink)}
+.wf-calc-q{font:600 26px/1.5 var(--serif)}
+.wf-streak{margin-top:8px;color:var(--accent)}
+.wf-cards{display:flex;gap:10px;margin:12px 0}
+.wf-card{display:inline-flex;align-items:center;justify-content:center;width:56px;height:72px;border:1px solid var(--rule-strong);border-radius:10px;background:var(--paper);font:600 26px/1 var(--serif)}
+.wf-fact{font:400 18px/1.7 var(--serif);color:var(--ink)}
+@media (max-width:420px){.wf-word{font-size:28px}.wf-poem{font-size:21px}.wf-card{width:48px;height:62px;font-size:22px}}

@@ -24,6 +24,7 @@
 // 界面对象：{ show(params, { from, back }), hide?(), onResume?() }。每个路由一个，VIEW_FACTORIES 里登记（路由表在 nav.js），
 // 各画进 index.html 里自己的 <section id="view-<section>">。第一次打开（或约定改了版本）先去约定页。
 import { importFromEnglish } from './voice-input.js';
+import { loadEnglishWords } from './waitfun.js';
 import { VERSION, APP_NAME, DEFAULT_SETTINGS, TASKS } from './config.js';
 import { openStore } from './db.js';
 import { createAI, normalizePoeUrl } from './ai.js';
@@ -239,6 +240,8 @@ async function boot() {
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
   // v0.7 语音和英语 App 同一套豆包凭据：数学这边没填就从英语 App 拿一份
   importFromEnglish(ctx).catch(() => {});
+  // v0.9 等一等小卡用她英语课本里的词
+  loadEnglishWords(ctx).catch(() => {});
   window.addEventListener('scroll', markNavbar, { passive: true });
   document.addEventListener('visibilitychange', () => {
     // 退到后台：讲到一半的状态马上写进去（iPad 可能直接把 App 关掉）

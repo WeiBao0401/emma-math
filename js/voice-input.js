@@ -72,31 +72,41 @@ function kidErr(code, cause = null) {
 }
 function micDenied() { const x = new Error('mic'); x.name = 'NotAllowedError'; return x; }
 
-// 英语 App 的设置在同一域名的 IndexedDB 'emma'（kv 仓，keyPath 'key'）。库不存在时绝不新建：新建出来的空库会让英语 App 打不开。
+// 英语 App 的数据在同一域名的 IndexedDB 'emma'（kv 仓，keyPath 'key'）。只读；库不存在时绝不新建：新建出来的空库会让英语 App 打不开。
+// readEnglishKV(['settings', 'textbook']) -> { settings, textbook }（读不到的是 undefined）；没有英语 App 返回 null
+export async function readEnglishKV(keys = [], { indexedDB = globalThis.indexedDB } = {}) {
+  if (!indexedDB) return null;
+  if (typeof indexedDB.databases === 'function') {
+    const list = await indexedDB.databases();
+    if (!list.some(d => d && d.name === 'emma')) return null;
+  }
+  const db = await new Promise((resolve, reject) => {
+    const req = indexedDB.open('emma');
+    req.onupgradeneeded = () => { try { req.transaction.abort(); } catch (e) { /* aborted below anyway */ } };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+    req.onblocked = () => reject(new Error('blocked'));
+  });
+  try {
+    if (!db.objectStoreNames.contains('kv')) return null;
+    const out = {};
+    for (const k of keys) {
+      out[k] = await new Promise((resolve, reject) => {
+        const r = db.transaction('kv', 'readonly').objectStore('kv').get(k);
+        r.onsuccess = () => resolve(r.result ? r.result.value : undefined);
+        r.onerror = () => reject(r.error);
+      });
+    }
+    return out;
+  } finally { try { db.close(); } catch (e) { /* fine */ } }
+}
+
 export async function importFromEnglish(ctx, { indexedDB = globalThis.indexedDB } = {}) {
   try {
     const s = (ctx.settings && ctx.settings()) || {};
     if (clean(s.doubaoToken) || s.asrFrom === 'cleared' || !indexedDB) return false;   // 家长清掉过就不再拿
-    if (typeof indexedDB.databases === 'function') {
-      const list = await indexedDB.databases();
-      if (!list.some(d => d && d.name === 'emma')) return false;
-    }
-    const db = await new Promise((resolve, reject) => {
-      const req = indexedDB.open('emma');
-      req.onupgradeneeded = () => { try { req.transaction.abort(); } catch (e) { /* aborted below anyway */ } };
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-      req.onblocked = () => reject(new Error('blocked'));
-    });
-    let value = null;
-    try {
-      if (!db.objectStoreNames.contains('kv')) return false;
-      value = await new Promise((resolve, reject) => {
-        const r = db.transaction('kv', 'readonly').objectStore('kv').get('settings');
-        r.onsuccess = () => resolve(r.result ? r.result.value : null);
-        r.onerror = () => reject(r.error);
-      });
-    } finally { try { db.close(); } catch (e) { /* fine */ } }
+    const got = await readEnglishKV(['settings'], { indexedDB });
+    const value = got && got.settings;
     const token = clean(value && value.doubaoToken);
     if (!token) return false;
     await ctx.saveSettings({ doubaoAppId: clean(value.doubaoAppId), doubaoToken: token, doubaoCluster: clean(value.doubaoCluster), asrFrom: 'english' });

@@ -72,6 +72,7 @@
 // diagnosePromise 任一个名字）或已经回来的 diagnosis、crop（这道题的截图 dataURL，可没有）、source、queue（这一页她挑了
 // 要讲的题，按顺序：[idx] 或 [{ photoId, idx }]）。写回：explain（本文件的状态，纯数据）、queue。
 import { h, icon, mathText, toast, skBars, teacherAvatar } from './ui-dom.js';
+import { createWaitFun } from './waitfun.js';
 import { check, compute } from './mathcheck.js';
 import { plain } from './mathview.js';
 import * as NB from './notebook.js';
@@ -1378,9 +1379,12 @@ export function createExplain(ctx) {
     }));
   }
 
+  // v0.9 等讲解的时候玩一个小东西（waitfun）：这道题一张，重画时同一张挪过来，玩到一半不丢
+  const funOf = c => (c.fun || (c.fun = createWaitFun(ctx)));
+
   function answerBox(c, which) {
     const host = h('div', { className: 'ex-answer' });
-    if (c.pending) { host.append(h('p', { className: 'ex-wait', text: COPY.waitFirst })); return host; }
+    if (c.pending) { host.append(h('p', { className: 'ex-wait', text: COPY.waitFirst }), funOf(c)); return host; }
     const sc = c.selfCheck && c.selfCheck.which === which ? c.selfCheck : null;
     const t = targetOf(c, which);
     if (sc) {
@@ -1519,7 +1523,7 @@ export function createExplain(ctx) {
         ];
       }
       case 'hint1': {
-        if (!d) return [h('h1', { className: 'ex-q', text: COPY.looking }), skBars([88, 64])];
+        if (!d) return [h('h1', { className: 'ex-q', text: COPY.looking }), skBars([88, 64]), funOf(c)];
         const h1 = d.hint1;
         const wl = wlOf(d, p);
         return withDirect(c, [
@@ -1587,7 +1591,7 @@ export function createExplain(ctx) {
   function explainView(c) {
     const st = c.st, p = c.problem;
     // 订正过、直接讲：一进来就是这一屏，诊断还没回来时先说一句、放两条灰条（底下那行“我也在看这道题……”照旧）
-    if (!st.diagnosis) return [h('h1', { className: 'ex-q', text: st.noWork ? COPY.noWorkWait : COPY.looking }), skBars([88, 64, 72])];
+    if (!st.diagnosis) return [h('h1', { className: 'ex-q', text: st.noWork ? COPY.noWorkWait : COPY.looking }), skBars([88, 64, 72]), funOf(c)];
     const d = st.diagnosis;
     const cv = contrast(p, d);
     // 核对没能确认（核对失败、核对的模型拿不准、文字答案比不了）：照样讲，提一句她可以说（Wei 10-25）

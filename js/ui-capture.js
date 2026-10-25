@@ -48,6 +48,7 @@
 // - 等识别的 10 秒让她先想“最想弄懂哪道”，等会儿第 4 屏她就知道挑哪道（设计 C 3.1）。
 // - 名额只挡“需要讲解的新题”，挡下来的进待讲，不丢。
 import { h, icon, mathText, skBars } from './ui-dom.js';
+import { createWaitFun } from './waitfun.js';
 import { plain } from './mathview.js';
 import { prepare, rotate as rotateImg, crop as cropImg, mask as maskImg } from './image.js';
 import { createPipeline, boxToRect, wrongProblems } from './pipeline.js';
@@ -596,7 +597,7 @@ export function createCapture(ctx) {
 
   async function read() {
     const my = ++gen;
-    stage = 'reading'; failCode = null; readStart = Date.now();
+    stage = 'reading'; failCode = null; readStart = Date.now(); funEl = null;
     render();
     startWaiting(my);
     const c = ctrl = new AbortController();
@@ -787,16 +788,16 @@ export function createCapture(ctx) {
     ];
   }
 
+  let funEl = null;   // v0.9 等一等的小卡：这次等待一张，重画时不换
   function readingView() {
+    if (!funEl) funEl = createWaitFun(ctx);
     return [
       navbar({ backLabel: COPY.stopWaiting, onBack: again, title: COPY.readTitle }),
       h('div', { className: 'page cap-page cap-reading' },
         h('h1', { className: 'page-title', text: COPY.readTitle }),
         h('div', { className: 'cap-progress', 'aria-hidden': 'true' }, h('i')),
         h('p', { className: 'small cap-time', role: 'status', text: COPY.readTime }),
-        h('p', { className: 'cap-think', text: COPY.readAsk }),
-        shot ? h('figure', { className: 'cap-sent' }, h('img', { src: shot.dataURL, alt: '盖好名字的照片' })) : null,
-        h('p', { className: 'small cap-tipline' }, h('b', { text: COPY.tipLabel + '：' }), h('span', { text: COPY.waitTips[0] }))),
+        funEl),
     ];
   }
 
