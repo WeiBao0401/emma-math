@@ -99,7 +99,7 @@ export function problemContext({ problem = {}, diagnosis = {}, step = '' } = {})
   return lines.filter(Boolean).join('\n');
 }
 
-const HIDDEN = /^[ \t]*【(练习|记录|进度)】\s*(\{[\s\S]*?\})\s*$/gm;
+const HIDDEN = /^[ \t]*【(练习|记录|进度|出卷)】\s*(\{[\s\S]*?\})\s*$/gm;
 
 function parseLoose(json) {
   try { return parseModelJSON(json); } catch { return null; }
@@ -107,26 +107,28 @@ function parseLoose(json) {
 
 export function splitReply(text) {
   const raw = String(text ?? '');
-  let practice = null, progress = '';
+  let practice = null, progress = '', quiz = null;
   const notes = [];
   const display = raw.replace(HIDDEN, (_, kind, json) => {
     const o = parseLoose(json);
     if (o && kind === '练习' && String(o.q || '').trim() && String(o.answer || '').trim() && !practice) {
       practice = { q: String(o.q).trim(), answer: String(o.answer).trim(), answer_kind: String(o.answer_kind || '').trim(), form: String(o.form || '').trim() };
+    } else if (o && kind === '出卷' && !quiz) {
+      quiz = o;   // v0.8 帮我出套题：要求问清楚了，quiz.normalizeSpec 再整理
     } else if (o && kind === '进度' && /^\d+(\.[\dP]+)*$/.test(String(o.section || '').trim())) {
       progress = String(o.section).trim();
     } else if (o && kind === '记录' && (o.kind === 'gap' || o.kind === 'ok')) {
       notes.push({ kind: o.kind, tag: String(o.tag || '').trim(), point: String(o.point || '').trim(), note: String(o.note || '').trim() });
     }
     return '';
-  }).replace(/【(练习|记录|进度)】[\s\S]*$/, '').replace(/\n{3,}/g, '\n\n').trim();
-  return { display, practice, notes, progress };
+  }).replace(/【(练习|记录|进度|出卷)】[\s\S]*$/, '').replace(/\n{3,}/g, '\n\n').trim();
+  return { display, practice, notes, progress, quiz };
 }
 
 // While the reply streams in, a hidden line may be half written: show everything before it
 export function visibleSoFar(text) {
   const s = String(text ?? '');
-  const i = s.search(/【(练|记|进)|【$/);
+  const i = s.search(/【(练|记|进|出)|【$/);
   return (i >= 0 ? s.slice(0, i) : s).trimEnd();
 }
 

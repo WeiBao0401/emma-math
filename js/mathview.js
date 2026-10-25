@@ -18,7 +18,7 @@ const SYMBOLS = {
 };
 const SPACES = { ',': ' ', ';': ' ', ':': ' ', '!': '', ' ': ' ', quad: ' ', qquad: '  ' };
 const OPS = new Set(['+', '−', '×', '÷', '=', '<', '>', '≤', '≥', '≠', '≈', '±', '·', '→', '⇒']);
-const IGNORE = new Set(['displaystyle', 'textstyle', 'big', 'Big', 'bigl', 'bigr', 'Bigl', 'Bigr', 'limits', 'nolimits']);
+const IGNORE = new Set(['left', 'right', 'displaystyle', 'textstyle', 'big', 'Big', 'bigl', 'bigr', 'Bigl', 'Bigr', 'limits', 'nolimits']);
 
 function tokenize(src) {
   const out = [];
@@ -194,7 +194,11 @@ function textPart(s) {
   for (const m of s.matchAll(RUN)) {
     out += esc(s.slice(last, m.index));
     last = m.index + m[0].length;
-    const run = m[0], body = run.trim();
+    let run = m[0];
+    // 选项的字母（A. −12）是字，不是式子里的 A
+    const label = /^\s*[A-H][.．、]\s*/.exec(run);
+    if (label) { out += esc(label[0]); run = run.slice(label[0].length); }
+    const body = run.trim();
     const tex = body ? looseTex(body) : null;
     if (!tex) { out += esc(run); continue; }
     if (tex.parts) { out += esc(run); continue; }

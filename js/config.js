@@ -18,7 +18,7 @@
 //
 // 依赖：无。只放常量，不放 Key、本机路径、学生数据（web/ 是公开仓库）。
 
-export const VERSION = '0.7.0';
+export const VERSION = '0.8.0';
 export const APP_NAME = 'Emma 的数学老师';
 export const DB_NAME = 'emmamath', DB_VERSION = 1;
 export const LS_PREFIX = 'emmamath.';
@@ -46,10 +46,12 @@ export const TASKS = {
   chat:      { model: 'gpt-5.4',           maxTokens: 2500, timeoutMs: 90000, fallback: 'claude-sonnet-5.5' },
   // listen：把她说的话转成文字（Poe 的 file 写法，实测 gemini-3.1-pro 7-9 秒逐字转对）。别家模型收不了录音，所以没有备用
   listen:    { model: 'gemini-3.1-pro',    maxTokens: 1000, timeoutMs: 60000, fallback: '' },
+  // v0.8 帮我出套题（quiz.js）：一次出一整套（最多 30 道，带答案和简要过程），再逐题核对
+  quiz:      { model: 'claude-sonnet-5.5', maxTokens: 12000, timeoutMs: 180000, fallback: 'gemini-3.1-pro' },
 };
 export const TASK_LABELS = {
   recognize: '看照片', explain: '讲错题', variants: '出变式题', solve: '独立核对', hint: '提示', reflect: '老师的笔记本',
-  chat: '自由问答', listen: '听写语音',
+  chat: '自由问答', listen: '听写语音', quiz: '出套题',
 };
 
 // Poe parameters per model. Web search is always off: Gemini has it on by default, about 1900 points a search.

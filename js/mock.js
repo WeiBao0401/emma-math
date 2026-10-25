@@ -653,6 +653,9 @@ function topicReply(kind, topic) {
   return POWERS[kind];
 }
 
+const QUIZ_ASK = '好呀，我来给你出一套。先问清楚三件事：\n- 范围：就考第二章“有理数的运算”，可以吗？\n- 题型：一套综合卷（选择、填空、计算都有），还是只练计算题？\n- 难度和题量：我建议中等难度、15 道左右、40 分钟。要不要多放几道你容易错的乘方题？';
+const QUIZ_GO = '好，那就出一套“有理数的运算”综合卷：中等难度，选择、填空、计算都有，多放几道乘方的题。我这就出，大约一分钟。\n【出卷】{"title":"有理数的运算 · 练习卷","sections":["2.1.1","2.1.2","2.2.1","2.2.2","2.3.1"],"focus":"有理数的混合运算，多练乘方","difficulty":"中等","style":"综合卷","count":7,"minutes":20,"weak":true,"parts":[{"name":"选择题","kind":"choice","count":2},{"name":"填空题","kind":"fill","count":2},{"name":"计算题","kind":"calc","count":3}],"note":""}';
+
 export function mockChat({ messages = [], mockCase = '' } = {}) {
   const list = Array.isArray(messages) ? messages : [];
   const users = list.filter(m => m && m.role === 'user');
@@ -670,6 +673,10 @@ export function mockChat({ messages = [], mockCase = '' } = {}) {
     if (c === 'other') return OTHER;
     return pick(c);
   }
+  // v0.8 帮我出套题：第一轮问清楚要求，她回答以后复述要求、写【出卷】
+  const quizStart = users.length && /她点了“帮我出套题”/.test(textOf(users[0]));
+  if (quizStart && users.length === 1) return QUIZ_ASK;
+  if (quizStart) return QUIZ_GO;
   if (isProbe(lastText) && users.length === 1) return probeReply(lastText);
   const assistants = list.filter(m => m && m.role === 'assistant').length;
   if (context && assistants === 0 && (users.length > 1 || lastText.replace(context, '').trim() === '')) return problemReply(topic);

@@ -428,7 +428,7 @@ export function answerShown(item) {
 }
 export const trapLine = item => { const s = sentence(item && (item.trap || item.pit)); return s ? COPY.trap + s : ''; };
 
-function itemHTML(it) {
+export function itemHTML(it) {
   const opts = it.options && it.options.length ? `<div class="pp-opts">${it.options.map(o => `<span>${renderText(o)}</span>`).join('')}</div>` : '';
   const u = str(it.unit);
   const unit = u && !/°/.test(u) ? ` ${esc(u)}` : '';

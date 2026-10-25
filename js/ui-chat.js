@@ -51,8 +51,10 @@ import { newId } from './db.js';
 import { noteForTeacher, focusPoint } from './reflect.js';
 import { latestNote, isMock, NOTES_KEY } from './notes.js';
 import { textbookMap, teacherLine } from './bookmap.js';
+import { quizUser, normalizeSpec, specLine, makeQuiz, QUIZ_CAP } from './quiz.js';
 
 export const CHATS_CAP = 50;
+export const QUIZ_REPLIES = ['你定吧', '标准卷就好', '结合我的薄弱点'];
 export const HISTORY_CHARS = 12000;
 export const RESUME_MS = 30 * 60 * 1000;
 const KINDS = new Set(['number', 'expr', 'equation', 'set', 'choice', 'compare', 'text']);
@@ -111,7 +113,7 @@ const imageOf = content => (Array.isArray(content) ? ((content.find(p => p && p.
 // ---------------------------------------------------------------- 纯函数
 
 export function newChat({ id = newId('c'), mode = 'free', point = null, cardId = '', context = '', stem = '', tag = '', at = new Date().toISOString() } = {}) {
-  const m = ['free', 'probe', 'problem'].includes(mode) ? mode : 'free';
+  const m = ['free', 'probe', 'problem', 'quiz'].includes(mode) ? mode : 'free';
   const p = point && typeof point === 'object'
     ? { name: str(point.name || point.point), tag: str(point.tag), evidence: Array.isArray(point.evidence) ? point.evidence.slice(0, 3).map(str) : [],
       ...(point.opener ? { opener: str(point.opener) } : {}) }
@@ -125,6 +127,7 @@ export function visibleMessages(chat) {
 
 export function chatTitle(chat = {}) {
   if (chat.mode === 'probe' && chat.point && chat.point.name) return clip(`聊聊：${chat.point.name}`, 20);
+  if (chat.mode === 'quiz') { const q = (chat.messages || []).find(m => m && m.quizSpec); return clip(q ? `出套题：${q.quizSpec.title}` : '出套题', 20); }
   if (chat.mode === 'problem' && chat.stem) return clip(`这道题：${plain(chat.stem)}`, 20);
   const first = visibleMessages(chat).find(m => m.role === 'user' && !m.local);
   const t = first ? str(first.display ?? textOf(first.content)).trim() : '';
@@ -377,7 +380,7 @@ export function createChat(ctx) {
       const text = h('div', { className: 'chat-text' });
       text.innerHTML = renderMessage(str(m.display ?? splitReply(textOf(m.content)).display));   // renderText 先转义
       const showPast = m.practice && (m.practiceDone || !isLast) && !m.swapAsked;
-      return h('div', { className: 'chat-msg t' + (m.local ? ' local' : '') }, teacherAvatar('chat-av'), h('div', { className: 'chat-tbody' }, text, showPast ? pastPractice(m) : null));
+      return h('div', { className: 'chat-msg t' + (m.local ? ' local' : '') }, teacherAvatar('chat-av'), h('div', { className: 'chat-tbody' }, text, showPast ? pastPractice(m) : null, m.quizSpec ? quizCard(m) : null));
     }
     const img = m.image || imageOf(m.content);
     const words = str(m.display ?? textOf(m.content));
@@ -452,6 +455,11 @@ export function createChat(ctx) {
           h('button', { type: 'button', className: 'text-btn accent', text: COPY.goOn, on: { click: () => send({ text: COPY.goOn }) } })));
       }
       if (last.practice && !last.practiceDone) out.push(practiceEl(last));
+      if (chat.mode === 'quiz') {
+        if (!chat.messages.some(m => m.quizSpec)) out.push(h('div', { className: 'chat-quick', role: 'group', 'aria-label': '快捷回答' },
+          QUIZ_REPLIES.map(q => h('button', { type: 'button', className: 'chat-chip', text: q, on: { click: () => send({ text: q }) } }))));
+        return out;
+      }
       const quick = QUICK_REPLIES.filter(q => !(last.practice && !last.practiceDone && q === '出一道题考考我'));
       out.push(h('div', { className: 'chat-quick', role: 'group', 'aria-label': '快捷回答' },
         quick.map(q => h('button', { type: 'button', className: 'chat-chip', text: q, on: { click: () => send({ text: q }) } }))));
@@ -462,6 +470,7 @@ export function createChat(ctx) {
           chips.map(q => h('button', { type: 'button', className: 'chat-chip', text: q, on: { click: () => send({ text: q }) } }))));
       }
       if (chat.mode === 'free') {
+        out.push(h('div', { className: 'btn-row chat-quizgo' }, h('button', { type: 'button', className: 'text-btn accent', on: { click: () => ctx.go('chat', { mode: 'quiz', fresh: Date.now() }) } }, icon('print'), h('span', { text: '帮我出套题' }))));
         const past = (peek('chats', []) || []).filter(x => x && x.id !== chat.id).slice(0, 5);
         if (past.length) {
           out.push(h('section', { className: 'chat-past' }, h('h2', { className: 'sec-h', text: COPY.past }),
@@ -613,6 +622,7 @@ export function createChat(ctx) {
       const parts = splitReply(raw);
       const msg = { role: 'assistant', content: raw, display: parts.display, at };
       if (parts.practice) msg.practice = parts.practice;
+      if (parts.quiz) msg.quizSpec = normalizeSpec(parts.quiz, ctx.curriculum);   // v0.8 要求问清楚了：接着出卷
       if (reply.partial) msg.partial = true;
       c.messages.push(msg);
       await saveNotes(c, parts.notes);
@@ -621,6 +631,51 @@ export function createChat(ctx) {
         try { await ctx.kv.set('progress', { ...(peek('progress', {}) || {}), section: parts.progress, updated: at, from: 'chat' }); } catch (e) { console.warn('progress', e); }
       }
     }
+    await saveChat(c);
+    if (chat === c) render({ keepScroll: true });
+    const last = c.messages[c.messages.length - 1];
+    if (last && last.quizSpec && !last.quizState) startQuiz(c, last);
+  }
+
+  // ------------------------------------------------ v0.8 帮我出套题
+  const quizJobs = new Map();   // msg.at -> { step, done, total }
+  function quizCard(m) {
+    const job = quizJobs.get(m.at);
+    let status;
+    if (m.quizState === 'done' && m.quizId) {
+      status = h('div', { className: 'btn-row' }, h('button', { type: 'button', className: 'btn', on: { click: () => ctx.go('quiz', { id: m.quizId }) } }, icon('print'), h('span', { text: '打开试卷' })));
+    } else if (m.quizState === 'failed') {
+      status = [h('p', { className: 'small danger', text: m.quizError || '没出成，再试一次。' }),
+        h('div', { className: 'btn-row' }, h('button', { type: 'button', className: 'btn quiet', text: '再出一次', on: { click: () => { const c = chat; if (c) startQuiz(c, m); } } }))];
+    } else if (job || m.quizState === 'making') {
+      const t = !job || job.step === 'make' ? '我在出题，大约一分钟……' : `在核对答案 ${job.done || 0} / ${job.total || 0}……`;
+      status = h('p', { className: 'small dots', text: t });
+    } else {
+      status = h('div', { className: 'btn-row' }, h('button', { type: 'button', className: 'btn quiet', text: '接着出', on: { click: () => { const c = chat; if (c) startQuiz(c, m); } } }));
+    }
+    return h('div', { className: 'chat-quiz' }, h('p', { className: 'label', text: m.quizSpec.title }), h('p', { className: 'small', text: specLine(m.quizSpec, ctx.curriculum) }), status);
+  }
+  async function startQuiz(c, m) {
+    if (quizJobs.has(m.at)) return;
+    const job = { step: 'make', done: 0, total: 0 };
+    quizJobs.set(m.at, job);
+    m.quizState = 'making';
+    m.quizError = '';
+    if (chat === c) render({ keepScroll: true });
+    try {
+      const prof = m.quizSpec.weak ? await ensureProfile() : null;
+      const quiz = await makeQuiz(ctx, m.quizSpec, { weakText: prof ? str(prof.text) : '',
+        onStep: (step, done, total) => { Object.assign(job, { step, done, total }); if (chat === c) render({ keepScroll: true }); } });
+      const list = (peek('quizzes', []) || []).filter(x => x && x.id !== quiz.id);
+      await ctx.kv.set('quizzes', [quiz, ...list].slice(0, QUIZ_CAP));
+      m.quizId = quiz.id;
+      m.quizState = 'done';
+    } catch (e) {
+      console.warn('quiz', e);
+      m.quizState = 'failed';
+      m.quizError = kidMessage(e, { where: 'chat' }) || '没出成，再试一次。';
+    }
+    quizJobs.delete(m.at);
     await saveChat(c);
     if (chat === c) render({ keepScroll: true });
   }
@@ -754,7 +809,7 @@ export function createChat(ctx) {
     const token = ++showToken;
     backLabel.textContent = !from || from === 'home' ? COPY.home : COPY.back;
     hearRow.hidden = true;
-    mode = ['free', 'probe', 'problem'].includes(params.mode) ? params.mode : 'free';
+    mode = ['free', 'probe', 'problem', 'quiz'].includes(params.mode) ? params.mode : 'free';
     // 打开以前的对话
     let id = str(params.chatId);
     if (!id && !params.fresh) id = resumable(peek('chats', []), { mode, cardId: str(params.cardId) });
@@ -788,6 +843,14 @@ export function createChat(ctx) {
       // v0.7 我的问题“和我弄清楚”：老师先开口
       if (str(params.settle)) { await openChat(c); send({ hidden: settleUser(str(params.settle)) }); return; }
       await openChat(c, { intro: c.noWork ? COPY.introDirect : COPY.introProblem });
+      return;
+    }
+
+    // v0.8 帮我出套题：老师先开口问清楚要求
+    if (mode === 'quiz') {
+      const c = newChat({ mode: 'quiz' });
+      await openChat(c);
+      send({ hidden: quizUser() });
       return;
     }
 

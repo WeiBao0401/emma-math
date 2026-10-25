@@ -469,6 +469,7 @@ export function createHome(ctx) {
       later ? h('button', { type: 'button', className: 'text-btn home-link accent', on: { click: goPending } }, h('span', {}, withNumbers(later))) : null,
       h('button', { type: 'button', className: 'text-btn home-link', on: { click: () => ctx.go('book') } }, icon('book'), h('span', { text: '错题本' })),
       h('button', { type: 'button', className: 'text-btn home-link', on: { click: () => ctx.go('bookmap') } }, icon('note'), h('span', { text: '课本地图' })),
+      h('button', { type: 'button', className: 'text-btn home-link', on: { click: () => ctx.go('quiz') } }, icon('print'), h('span', { text: '帮我出套题' })),
       ask ? h('button', { type: 'button', className: 'text-btn home-link home-askteacher', 'aria-label': `${ASK_TITLE}，有要问的题`, on: { click: () => ctx.go('book', { tab: 'ask' }) } },
         h('span', { text: ASK_TITLE }), h('span', { className: 'home-dot', 'aria-hidden': 'true' })) : null,
     ].filter(Boolean));

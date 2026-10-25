@@ -43,6 +43,7 @@ import { createPractice } from './ui-practice.js';
 import { createParent } from './ui-parent.js';
 import { createChat } from './ui-chat.js';
 import { createBookmap } from './ui-bookmap.js';
+import { createQuiz } from './ui-quiz.js';
 import { createPaper } from './ui-paper.js';
 
 const params = new URLSearchParams(location.search);
@@ -150,6 +151,7 @@ const VIEW_FACTORIES = {
   practice: createPractice,
   book: createBook,
   bookmap: createBookmap,
+  quiz: createQuiz,
   card: createCard,
   parent: createParent,
   onboard: createOnboard,
