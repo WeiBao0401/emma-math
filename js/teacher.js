@@ -3,7 +3,7 @@
 //
 //   teacherSystem({ profileText, progress, exam, tags }) -> string    system prompt for every chat turn
 //   probeUser(point) -> string            the hidden first user turn when the teacher starts a talk on a weak point
-//   problemContext({ problem, diagnosis }) -> string   hidden context when she asks about a problem just explained
+//   problemContext({ problem, diagnosis, step }) -> string   hidden context when she asks about a problem (step: where she paused)
 //   splitReply(text) -> { display, practice, notes }   strips 【练习】 and 【记录】 lines; display is what she reads
 //     practice: { q, answer, answer_kind, form } | null      notes: [{ kind: 'gap' | 'ok', tag, point, note }]
 //   visibleSoFar(text) -> string          while streaming: the text without a started hidden line
@@ -59,7 +59,7 @@ ${evidence ? `你看到的证据：${evidence}。` : ''}${point.opener ? `\n你�
 第一句打个招呼，用一两句话说为什么想和她聊这个（可以提证据，语气轻松，不像在检查）。然后问她一个能看出她怎么想的小问题，等她回答。这一条不要讲解，也不要出【练习】。`;
 }
 
-export function problemContext({ problem = {}, diagnosis = {} } = {}) {
+export function problemContext({ problem = {}, diagnosis = {}, step = '' } = {}) {
   const lines = [
     '（这一段是程序发的，她看不到。）她刚在 App 里做过这道题（讲错题或者复习时），现在想接着问。这道题的情况：',
     `题目：${problem.stem || ''}`,
@@ -70,6 +70,8 @@ export function problemContext({ problem = {}, diagnosis = {} } = {}) {
     diagnosis.wrong_step ? `她错在：${diagnosis.wrong_step}` : '',
     diagnosis.why ? `她可能是这样想的：${diagnosis.why}` : '',
     diagnosis.remember ? `讲题时给她的要点：${diagnosis.remember}` : '',
+    problem.useWork === false ? '她已经在卷子上订正过，这次讲题没有参考她原来写的过程。' : '',
+    step ? `她是在讲题的这一步停下来问你的：${step}` : '',
   ];
   return lines.filter(Boolean).join('\n');
 }

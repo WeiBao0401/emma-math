@@ -44,6 +44,7 @@ export function normalizePage(raw) {
       figure: str(p && p.figure), her_work: strs(p && p.her_work), her_answer: str(p && p.her_answer),
       mark: MARKS.has(mark) ? mark : 'none', teacher_note: str(p && p.teacher_note), circled: str(p && p.circled),
       unclear: !!(p && p.unclear) || /\[\?\]/.test(JSON.stringify(p || {})),
+      corrected: !!(p && p.corrected),
     };
   }).filter(p => p.stem || p.her_answer || p.her_work.length);
   const graded = r.graded === true || problems.some(p => p.mark === 'wrong' || p.mark === 'half' || p.mark === 'right');

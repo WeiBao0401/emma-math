@@ -18,12 +18,17 @@
 //     每道题：题号、批改、按 pipeline.boxToRect 裁的小截图；默认勾打叉和半对的。讲过的（items 里有这页这题的卡）、
 //     问老师的不能再勾。今天的名额（kv 'quota'，上学日 2 道、周末 5 道）不够时，前几道今天讲，其余标“待讲”，
 //     “先讲这道”把一道提到最前。“开始讲第 X 题”：其余勾上的进 kv 'pending'，flow.queue 记下今天还要讲的，去 confirm。
+//     订正过的题（识别的 corrected，或她在屏 5 选了“我已经订正过了”）题号后面一个小标“订正过”（showCorrected）。
 //   createConfirm(ctx) -> { show({ photoId, idx }), hide() }  路由 'confirm'，#view-confirm，屏 5 我看到的题对吗
 //     题目、她写的每一行、她的答案、老师批改（错 / 半对 / 对，可改）、老师写的字；带 [?] 的黄底。点哪一行改哪一行：
 //     答案用 keypad.js 的 createAnswer（kind 'expr'，没有 keypad.js 或答案里有中文时用普通输入框），其余用输入框。
 //     “对，就是这样”：先 doubtCheck（程序算出的答案等于她的答案、老师却批错），是就问“是我看错了你的字，还是老师批错了？”，
 //     选“我觉得我是对的”建一张 status 'ask' 的卡（askCard）进问老师，回这页。否则把确认后的题写进 flow，
 //     **立刻**调 ctx.pipeline.diagnose(problem, 这道题的截图) 并把 promise 放进 flow.diagnosing，go('explain', { photoId, idx })。
+//     v0.6.0 两选一（她写了过程才出，askUseWork）：“按我原来写的找错”和“我已经订正过了，直接讲正确思路”。识别出 corrected
+//     默认第二个，上面说一句“我看到这道题你已经订正过了。”；否则默认第一个。选的写进 problem.useWork（true / false），
+//     随 flow.problem 到讲题屏（pipeline.diagnose 看它），也跟着存进卡。选“直接讲”时过程和答案折成一行、变淡，不再一行行核对，
+//     也不问“是我看错了还是学校老师批错了”（订正后的答案本来就该是对的）。
 //   createCaptureScreens(ctx) -> { capture, page, confirm }   三个一起建
 //
 // flow（ctx.flow，CONTRACTS 10）里这几屏写的字段
@@ -32,7 +37,8 @@
 //               diagnosing（Promise<Diagnosis>，只在内存）, diagnosis（回来后补上）, diagnoseError（失败时的 code）, startedAt }
 // kv：'capture' { source, bands: { 来源: { y, h } } }、'pending' [{ photoId, idx, at }]、'quota' { day, used }（这里只读）
 // photos 记录比 CONTRACTS 12 多三个字段：turned（存的图已经转正，boxToRect 照样用 page.rotation）、recrops { idx: dataURL }、
-//   page.problems[i] 上的 confirmed（她点过“对”）和 edits [{ field, from, to, at }]（改过的字，用来校识别）
+//   page.problems[i] 上的 confirmed（她点过“对”）和 edits [{ field, from, to, at }]（改过的字，用来校识别），
+//   useWork（她在屏 5 点过两选一才有；确认时 confirmedProblem 一定写成 true / false）
 //
 // 导出（纯函数，node 能测）：见下面“纯函数”一节每个函数前的注释。COPY 是孩子看到的全部文字（测试查禁用词）。
 //
@@ -148,6 +154,15 @@ export const COPY = {
   done: '好了',
   cancel: '取消',
   typeText: '用键盘打字',
+  // 订正过的题（v0.6.0，Emma 10-25 的反馈）：讲题参不参考她写的过程
+  correctedTag: '订正过',
+  correctedSeen: '我看到这道题你已经订正过了。',
+  useWorkQ: '这道题怎么讲？',
+  useWorkYes: '按我原来写的找错',
+  useWorkNo: '我已经订正过了，直接讲正确思路',
+  folded: '订正过的过程，这次不看。',
+  peek: '看一眼',
+  unpeek: '收起',
   answerPh: '你的答案',
   linePh: '这一行写的是',
   photoFail: {
@@ -287,10 +302,25 @@ export function addPending(list, entries, now = Date.now()) {
 export const dropPending = (list, photoId, idx) => (Array.isArray(list) ? list : []).filter(e => !(e && e.photoId === photoId && e.idx === idx));
 export const pendingFor = (list, photoId) => new Set((Array.isArray(list) ? list : []).filter(e => e && e.photoId === photoId).map(e => e.idx));
 
-// 程序先算（设计 C 3.2 第 5 屏）：老师批“错”，程序算出的答案却和她的一样，就要先问她
+// 屏 5 的两选一（v0.6.0）：“按我原来写的找错”还是“我已经订正过了，直接讲正确思路”。卷子订正过以后再拍，
+// 照片上是改过的步骤，不是她当时的想法；照着它找错会讲偏（Emma 10-25 的反馈）。
+// 问不问：她写了过程才问；订正过、只写了答案的也问（改过的答案同样不是当时的）；学校老师批了对的不问
+const filled = s => String(s ?? '').trim() !== '';
+export const askUseWork = p => !!p && p.mark !== 'right'
+  && ((Array.isArray(p.her_work) && p.her_work.some(filled)) || (!!p.corrected && filled(p.her_answer)));
+// 选的是哪个（problem.useWork）：她点过的照旧；没点过时识别出订正过（corrected）默认“直接讲”，否则“按原来写的找错”。不问的题都是 true
+export function useWorkOf(p) {
+  if (!askUseWork(p)) return true;
+  return typeof p.useWork === 'boolean' ? p.useWork : !p.corrected;
+}
+// 第 4 屏题号后面的小标“订正过”：识别出订正过，或她在第 5 屏选了“我已经订正过了”
+export const showCorrected = p => !!p && (!!p.corrected || p.useWork === false);
+
+// 程序先算（设计 C 3.2 第 5 屏）：老师批“错”，程序算出的答案却和她的一样，就要先问她。
+// 选了“直接讲正确思路”的不问：订正后的答案本来就该是对的
 export function doubtCheck(p) {
   const none = { same: false, computed: null };
-  if (!p || p.mark !== 'wrong') return none;
+  if (!p || p.mark !== 'wrong' || !useWorkOf(p)) return none;
   const ans = String(p.her_answer || '').trim();
   if (!ans || hasUnclear(ans) || hasUnclear(p.stem)) return none;
   let c = null;
@@ -335,15 +365,16 @@ export function mergeRetake(old, fresh) {
     her_answer: pick(o.her_answer, fresh.her_answer),
     mark: fresh.mark === 'wrong' || fresh.mark === 'half' || fresh.mark === 'right' ? fresh.mark : o.mark,
     teacher_note: pick(o.teacher_note, fresh.teacher_note), circled: pick(o.circled, fresh.circled),
-    unclear: !!fresh.unclear, retaken: true,
+    unclear: !!fresh.unclear, corrected: typeof fresh.corrected === 'boolean' ? fresh.corrected : !!o.corrected, retaken: true,
   };
 }
 
-// 交给 diagnose 和 flow 的那一份：她核对过，所以 unclear 去掉
+// 交给 diagnose 和 flow 的那一份：她核对过，所以 unclear 去掉；useWork 定下来（true / false），随 flow 到讲题屏、存进卡
 export function confirmedProblem(p) {
   const q = JSON.parse(JSON.stringify(p || {}));
   q.unclear = [q.stem, q.her_answer, q.teacher_note, ...(q.her_work || [])].some(hasUnclear);
   q.confirmed = true;
+  q.useWork = useWorkOf(q);
   return q;
 }
 
@@ -936,6 +967,7 @@ export function createPage(ctx) {
           h('span', { className: 'cap-pline' },
             h('span', { className: 'cap-pno', text: numberLabel(p) }),
             h('span', { className: 'cap-pmark', text: markLabel(p) }),
+            showCorrected(p) ? h('span', { className: 'tag cap-pfix', text: COPY.correctedTag }) : null,
             status ? h('span', { className: 'tag cap-pst', text: status }) : null),
           p.stem ? h('span', { className: 'cap-pstem', text: plain(p.stem) }) : null),
         thumbBox);
@@ -1009,12 +1041,13 @@ export function createConfirm(ctx) {
   let editing = null;      // { key: 'stem' | 'work' | 'answer' | 'note', i }
   let keypad = null, typed = false;
   let doubt = null, busy = false, editHint = false;
+  let peek = false;        // 选了“直接讲”以后，折起来的过程点开看一眼
   let cropImgEl = null;
 
   async function load(photoId, i) {
     const my = ++gen;
     idx = Number(i);
-    editing = null; doubt = null; busy = false; editHint = false; typed = false;
+    editing = null; doubt = null; busy = false; editHint = false; typed = false; peek = false;
     el.replaceChildren(h('div', { className: 'cap-wrap' },
       navbar({ backLabel: COPY.backShort, onBack: () => ctx.back(), title: '' }),
       h('div', { className: 'page cap-page' }, skBars())));
@@ -1096,7 +1129,7 @@ export function createConfirm(ctx) {
         if (!editing || editing.key !== key || !host.isConnected) return;
         if (mod && typeof mod.createAnswer === 'function') {
           try {
-            keypad = mod.createAnswer(pad, { kind: 'expr', placeholder: COPY.answerPh, onSubmit: text => commit(key, i, typeof text === 'string' ? text : '') });
+            keypad = mod.createAnswer(pad, { kind: 'expr', placeholder: COPY.answerPh, context: `${(p && p.stem) || ''} ${cur}`, onSubmit: text => commit(key, i, typeof text === 'string' ? text : '') });
             if (keypad && keypad.set) keypad.set(asciiMath(cur));
             if (keypad && keypad.focus) keypad.focus();
             return;
@@ -1128,6 +1161,44 @@ export function createConfirm(ctx) {
     return h('div', { className: 'cap-markrow' },
       h('div', { className: 'cap-seg', role: 'group', 'aria-label': COPY.mark }, segs),
       h('span', { className: 'small', text: COPY.marks[p.mark] && p.mark !== 'none' ? COPY.nowMark(COPY.marks[p.mark]) : COPY.pickMark }));
+  }
+
+  // ---------- 两选一：按原来写的找错，还是直接讲正确思路（写进 p.useWork，确认时由 confirmedProblem 定下来）
+
+  const folded = () => askUseWork(p) && !useWorkOf(p);
+  function pickUseWork(val) {
+    if (busy || (p.useWork === val && useWorkOf(p) === val)) return;
+    if (!val && editing && (editing.key === 'work' || editing.key === 'answer')) closeEditor();
+    p.useWork = val;
+    doubt = null; peek = false;
+    persist();
+    render();
+  }
+  function useWorkChoice() {
+    const on = useWorkOf(p);
+    const opt = (val, text) => h('button', { type: 'button', role: 'radio', 'aria-checked': String(on === val),
+      className: 'cap-uw' + (on === val ? ' on' : ''), disabled: busy, on: { click: () => pickUseWork(val) } },
+    h('span', { className: 'cap-uw-dot', 'aria-hidden': 'true' }, on === val ? icon('check') : null),
+    h('span', { className: 'cap-uw-text', text }));
+    return h('div', { className: 'cap-usework' },
+      p.corrected ? h('p', { className: 'cap-fixed-note', text: COPY.correctedSeen }) : null,
+      h('p', { className: 'cap-usework-q', id: 'cap-usework-q', text: COPY.useWorkQ }),
+      h('div', { className: 'cap-uw-opts', role: 'radiogroup', 'aria-labelledby': 'cap-usework-q' },
+        opt(true, COPY.useWorkYes), opt(false, COPY.useWorkNo)));
+  }
+  // 选了“直接讲”：她写的过程和答案折成一行、变淡，不用一行行核对；点开只看，不能改
+  function foldedRow(work) {
+    return h('div', { className: 'cap-dl-row cap-folded' }, h('div', { className: 'cap-dt', text: COPY.work }),
+      h('div', { className: 'cap-dd' },
+        h('button', { type: 'button', className: 'cap-foldbtn', 'aria-expanded': String(peek), on: { click: () => { peek = !peek; render(); } } },
+          h('span', { className: 'cap-foldtext', text: COPY.folded }),
+          h('span', { className: 'cap-peek', text: peek ? COPY.unpeek : COPY.peek }),
+          icon('chev', 'cap-chev')),
+        peek ? h('div', { className: 'cap-peeklist' },
+          work.length ? h('ol', { className: 'cap-work cap-work-ro' }, work.map((w, i) => h('li', {},
+            h('span', { className: 'cap-ln', text: circled(i) }), mathText(w, { className: 'cap-rotext' })))) : null,
+          filled(p.her_answer) ? h('p', { className: 'cap-roans' }, h('span', { className: 'cap-roans-k', text: COPY.answer }),
+            mathText(p.her_answer, { className: 'cap-rotext' })) : null) : null));
   }
 
   // ---------- 三个按钮
@@ -1205,8 +1276,9 @@ export function createConfirm(ctx) {
 
   function editSomething() {
     if (editing) return;
-    const firstUnclear = hasUnclear(p.stem) ? ['stem', null] : (p.her_work || []).findIndex(hasUnclear) >= 0 ? ['work', p.her_work.findIndex(hasUnclear)]
-      : hasUnclear(p.her_answer) ? ['answer', null] : hasUnclear(p.teacher_note) ? ['note', null] : null;
+    const fold = folded();   // 折起来的过程和答案不用核对
+    const firstUnclear = hasUnclear(p.stem) ? ['stem', null] : !fold && (p.her_work || []).findIndex(hasUnclear) >= 0 ? ['work', p.her_work.findIndex(hasUnclear)]
+      : !fold && hasUnclear(p.her_answer) ? ['answer', null] : hasUnclear(p.teacher_note) ? ['note', null] : null;
     if (firstUnclear) { openEditor(firstUnclear[0], firstUnclear[1]); return; }
     editHint = true;
     say(ctx, COPY.editHint);
@@ -1217,7 +1289,8 @@ export function createConfirm(ctx) {
     if (!el || !p) return;
     const label = numberLabel(p);
     const work = p.her_work || [];
-    const anyUnclear = p.unclear || [p.stem, p.her_answer, p.teacher_note, ...work].some(hasUnclear);
+    const ask = askUseWork(p), fold = folded();
+    const anyUnclear = fold ? [p.stem, p.teacher_note].some(hasUnclear) : p.unclear || [p.stem, p.her_answer, p.teacher_note, ...work].some(hasUnclear);
     cropImgEl = h('img', { alt: `${label}的原题`, on: { click: ev => ev.currentTarget.closest('.cap-crop').classList.toggle('big') } });
     const fig = h('figure', { className: 'cap-crop' }, cropImgEl);
     const rows = [
@@ -1225,11 +1298,14 @@ export function createConfirm(ctx) {
       p.options && p.options.length ? h('div', { className: 'cap-dl-row' }, h('div', { className: 'cap-dt', text: COPY.options }),
         h('div', { className: 'cap-dd' }, h('ul', { className: 'cap-opts' }, p.options.map(o => h('li', {}, mathText(o)))))) : null,
       p.figure ? h('div', { className: 'cap-dl-row' }, h('div', { className: 'cap-dt', text: COPY.figure }), h('div', { className: 'cap-dd cap-fig', text: p.figure })) : null,
-      h('div', { className: 'cap-dl-row' }, h('div', { className: 'cap-dt', text: COPY.work }),
-        h('div', { className: 'cap-dd' }, work.length
-          ? h('ol', { className: 'cap-work' }, work.map((w, i) => h('li', {}, h('span', { className: 'cap-ln', text: circled(i) }), slot('work', i, w, ''))))
-          : h('p', { className: 'muted cap-nowork', text: COPY.noWork }))),
-      h('div', { className: 'cap-dl-row' }, h('div', { className: 'cap-dt', text: COPY.answer }), h('div', { className: 'cap-dd' }, slot('answer', null, p.her_answer, COPY.noAnswer))),
+      fold ? foldedRow(work) : [
+        h('div', { className: 'cap-dl-row' }, h('div', { className: 'cap-dt', text: COPY.work }),
+          h('div', { className: 'cap-dd' }, work.length
+            ? h('ol', { className: 'cap-work' }, work.map((w, i) => h('li', {}, h('span', { className: 'cap-ln', text: circled(i) }), slot('work', i, w, ''))))
+            : h('p', { className: 'muted cap-nowork', text: COPY.noWork }))),
+        h('div', { className: 'cap-dl-row' }, h('div', { className: 'cap-dt', text: COPY.answer }), h('div', { className: 'cap-dd' }, slot('answer', null, p.her_answer, COPY.noAnswer))),
+      ],
+      ask ? useWorkChoice() : null,
       h('div', { className: 'cap-dl-row' }, h('div', { className: 'cap-dt', text: COPY.mark }), h('div', { className: 'cap-dd' }, markSeg())),
       p.teacher_note ? h('div', { className: 'cap-dl-row' }, h('div', { className: 'cap-dt', text: COPY.note }), h('div', { className: 'cap-dd' }, slot('note', null, p.teacher_note, ''))) : null,
     ];

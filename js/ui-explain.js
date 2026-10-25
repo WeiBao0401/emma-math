@@ -48,6 +48,26 @@
 //   error     诊断失败：kidMessage(err, { where: 'explain' })，“再试一次”或“先放进待讲”
 // 每次作答先记在 state.attempts，收进本子时连同卡的 id 一起写进 attempts（store.addAttempt，CONTRACTS 12 的字段）。
 //
+// v0.6.0（Emma 用了以后的两条反馈）
+//   不参考以前的步骤：她在卷子上订正过，确认屏选了直接讲（problem.useWork === false）。pipeline.diagnose 已经不看她的过程，
+//             这里跳过“先自己找”和提示阶梯，直接进讲清楚（一步步点开，只有正确的一栏），然后 self_explain 二选一（问的是
+//             关键一步，mySentence 存成“关键一步：……”），然后同构题，往下照旧。found 'explain'，算名额。
+//   有问题？问我：讲题的每一屏（先自己找、提示、讲清楚、一句话、同构题、举一反三）导航栏右上角常驻一个按钮；收进本子那一屏
+//             照旧是底下的“还有不明白的？问我”。点了 go('chat', askParams(...))：problem、diagnosis（回来了才带，拿不准的不带）、
+//             step（askStep：她停在哪一步、那一屏写着什么）、cardId（有就带）、chatId（这道题第一次问时生成，存在状态里，
+//             同一道题接着同一段聊）。从 chat 返回时讲题屏原样停在那一步：状态在 cur 和 flow 里，hide 时记下小键盘里没交的字，
+//             回来再填上；诊断没回来时去问也行，回来照样接上（同一个 promise 只挂一次）。
+//   举一反三：收进本子以后（做完同构题、自己改对的轻卡也一样）出“举一反三，再来一道”。题从这张卡的 pool 里取（没用过、
+//             核对过、优先近变式，其次辨析、远变式，不取同构题：同构题留给明天）；pool 还在后台补就等它，再没有当场出 3 道
+//             （EXTRA_MAKE）。一题一屏，小键盘作答：错一次本机提示（撞上 trap_answer 点名“又是那个坑”），错两次要一句老师的
+//             提示（retryHint），错三次看答案。做完问“再来一道”还是“够了”；一次最多 3 道，第 3 道做完说“今天练够了，过两天
+//             我再考你，记得更牢。”用过的题进卡的 used；作答写 attempts（kind 'extra'），不调 recordReview。
+//   步骤（state.step）多了 extra：举一反三的一道题（state.extra，见 reduce）。从 done 进、回 done。
+//   状态另加 noWork、chatId、extra；事件另加 chat-id、extra-start / extra-q / extra-answer / extra-hint / extra-flag / extra-more / extra-end。
+//   新导出（纯函数，tests/explain.test.mjs）：noWorkOf、sentenceHead、sentenceOf、askable、askStep、askParams、extraOffer、
+//   pickExtra、extraQuestion、useExtra、extraAttempt、extraSummary、EXTRA_MAX、EXTRA_LEVELS、EXTRA_MAKE、EXTRA_WAIT_MS。
+//   出题、判对错、提示的话用 ui-practice 的 variantQuestion、judge、afterSubmit、praiseLine、missLine、answerText、flagCard、freeVariants。
+//
 // 读 ctx.flow.get() 的这些字段（确认屏写）：problem（她确认过的题）、diagnose 的 promise（diagnose / diagnosing /
 // diagnosePromise 任一个名字）或已经回来的 diagnosis、crop（这道题的截图 dataURL，可没有）、source、queue（这一页她挑了
 // 要讲的题，按顺序：[idx] 或 [{ photoId, idx }]）。写回：explain（本文件的状态，纯数据）、queue。
@@ -59,6 +79,8 @@ import { kidMessage, canRetry } from './kid-errors.js';
 import { createPipeline, boxToRect, localHint, wrongProblems } from './pipeline.js';
 import { crop as cropImage, thumb as thumbImage } from './image.js';
 import { newId, dataURLToBlob } from './db.js';
+// 举一反三的题和复习的变式题是同一种题：出题、判对错、三次提示、夸她的话都照复习（ui-practice 的纯函数）
+import { variantQuestion, judge as judgeQuestion, afterSubmit, praiseLine, missLine, answerText as questionAnswer, flagCard, freeVariants } from './ui-practice.js';
 
 // 变式题池：近变式 2、辨析 1、远变式 2、备用 1（C 5.1）。没有同构题时，先在最前面加一道同构题当作当天的同构题。
 export const LEVELS = ['近变式', '近变式', '辨析', '远变式', '远变式', '近变式'];
@@ -66,6 +88,12 @@ export const TWIN_LEVELS = ['同构', ...LEVELS];
 export const SLOW_MS = 25000;        // 等诊断超过这么久，说一句“还在想”，给“先放进待讲”
 export const TWIN_WAIT_MS = 45000;   // 等变式池里的同构题最多这么久，再没有就跳过同构题
 export const HINT2_TRIES = 2;        // 同一步最多追 2 次，还不对就直接讲（C 7.1）
+// 举一反三：一次最多 3 道（研究说同一天多练没有长期好处，隔几天再考记得更牢）；池子里先取近变式，其次辨析、远变式；
+// 池子没有就当场出这 3 道；后台正在补池子时最多等它这么久
+export const EXTRA_MAX = 3;
+export const EXTRA_LEVELS = ['近变式', '辨析', '远变式'];
+export const EXTRA_MAKE = ['近变式', '辨析', '近变式'];
+export const EXTRA_WAIT_MS = 60000;
 
 // 她看到的固定文案：弯引号，不用破折号和感叹号，句子短；App 自称“我”，真老师叫“学校老师”（DESIGN 7.6）
 export const COPY = {
@@ -142,6 +170,28 @@ export const COPY = {
   ok: '好了',
   paperDone: '在纸上写好了，对照看',
   backLabel: '返回',
+  // v0.6.0
+  askAny: '有问题？问我',
+  noWork: '你已经订正过了。这次不看原来写的，直接讲正确的思路。',
+  noWorkWait: '这道直接讲正确的思路。我先想一想……',
+  howTo: '正确的思路',
+  fullWork: '完整过程',
+  keyLead: '关键一步：',
+  extra: '举一反三，再来一道',
+  extraLabel: '举一反三',
+  extraMaking: '我在出一道新的……',
+  extraNone: '这会儿出不了新题。下次复习再练。',
+  extraMore: '再来一道',
+  extraEnough: '够了',
+  extraFull: '今天练够了，过两天我再考你，记得更牢。',
+  extraBack: '好',
+  extraSeeAnswer: '这道先看答案。',
+  extraKey: '答案',
+  extraThinking: '我在想一个提示……',
+  extraSame: '和上一次一样。改一改再交。',
+  extraSelfOk: '好。纸上写清楚，考试也是这样写。',
+  extraSelfNo: '没关系。照着答案在纸上改一遍。',
+  extraTrap: '又是那个坑。',
 };
 
 // ---------------------------------------------------------------- small pure helpers
@@ -157,7 +207,12 @@ export function isChoice(problem = {}, diag = null) {
   return /选择/.test(str(problem && problem.type)) || (Array.isArray(problem && problem.options) && problem.options.length >= 2);
 }
 
+// she corrected it on paper and chose “直接讲” on screen 5: her lines are not what she thought then, so no finding,
+// no ladder built on them; straight to the explanation of the right way
+export const noWorkOf = (problem = {}) => !!(problem && problem.useWork === false);
+
 export function entryStep(problem = {}) {
+  if (noWorkOf(problem)) return 'explain';
   if (isChoice(problem)) return 'hint1';
   return (problem && problem.her_work || []).length ? 'find' : 'redo';
 }
@@ -257,6 +312,13 @@ const wlOf = (diag, problem = {}) => {
 export function contrast(problem = {}, diag = {}) {
   const work = (problem && problem.her_work) || [];
   const sol = (diag && diag.solution) || [];
+  // 订正过、直接讲：她纸上的已经是改过的，不放“你写的”，只有正确的一栏（only），全部写完以后再看
+  if (noWorkOf(problem)) {
+    return {
+      only: true, mineLabel: '', mine: [], rightLabel: sol.length ? COPY.fullWork : COPY.rightAnswer,
+      right: sol.length ? sol.map(t => ({ text: t, hi: false })) : [{ text: answerText(diag), hi: true }],
+    };
+  }
   const wl = wlOf(diag, problem);
   if (wl < 0) {
     return {
@@ -351,8 +413,10 @@ export function attachLocal(card, info) {
   return c;
 }
 
+// 订正过、直接讲的题没有她错的那一行：出题时把“这类题最容易卡在哪”（why）当作她的坑
 export const flatForVariants = (problem = {}, diag = {}) => ({
-  stem: problem.stem || '', options: problem.options || [], answer: diag.answer || '', wrong_step: diag.wrong_step || '',
+  stem: problem.stem || '', options: problem.options || [], answer: diag.answer || '',
+  wrong_step: diag.wrong_step || (noWorkOf(problem) ? diag.why || '' : ''),
   error_type: diag.error_type || '', why: diag.why || '', section: diag.section || '',
 });
 
@@ -473,22 +537,168 @@ export function doneView(result = {}) {
   return { title: COPY.saved, lines: [...merged, ...pit, tomorrow].filter(Boolean) };
 }
 
+// ---------------------------------------------------------------- 一句话（self_explain）
+
+// 平常是补全“我错在：……”；订正过、直接讲的题问的是“这道题的关键一步是什么”，模型可能写成问句
+const isQuestion = q => /[？?]\s*$/.test(str(q));
+export function sentenceHead(se = {}, noWork = false) {
+  const q = str(se && se.q);
+  if (isQuestion(q)) return q;
+  return (q || (noWork ? COPY.keyLead : '我错在：')) + '……';
+}
+// the sentence that goes on the card (mySentence): the stem with the right option filled in
+export function sentenceOf(se = {}, noWork = false) {
+  const right = str(((se && se.options) || [])[se && se.answer === 1 ? 1 : 0]);
+  const q = str(se && se.q);
+  if (!q || isQuestion(q)) return (noWork || /关键/.test(q) ? COPY.keyLead : '我错在：') + right;
+  return q + right;
+}
+
+// ---------------------------------------------------------------- 有问题？问我（v0.6.0）
+
+const clip = (t, n = 90) => { const s = str(t).replace(/\s+/g, ' '); return s.length > n ? s.slice(0, n) + '…' : s; };
+
+// 哪几屏有右上角的“有问题？问我”：讲题的每一屏。收进本子那一屏用底下那个；拿不准的不讲（CONTRACTS 9），也不接着问
+const ASK_STEPS = new Set(['find', 'redo', 'fix', 'hint1', 'hint2', 'explain', 'sentence', 'twin', 'extra']);
+export const askable = st => !!st && ASK_STEPS.has(st.step) && !(st.diagnosis && st.diagnosis.checked === 'unsure');
+
+// 带给老师的一句话（teacher.problemContext 的 step）：她停在讲题的哪一步、那一屏上写着什么。同构题和举一反三的题
+// 带上答案，请老师先别直接说：老师坐在她旁边陪她做，不替她做
+export function askStep(st = {}, problem = {}, { twin = null } = {}) {
+  const d = st.diagnosis && st.diagnosis.checked !== 'unsure' ? st.diagnosis : null;
+  const work = (problem && problem.her_work) || [];
+  const doing = (t, given) => `（这道的答案是 ${str(t.answer)}，她还在做，先别直接告诉她${given ? `；她刚才答的是 ${given}，不对` : ''}）`;
+  switch (st.step) {
+    case 'find': return '先自己找：她在看自己写的每一行，找从哪一行开始不对';
+    case 'redo': return '她在纸上把这道题从头再做一遍';
+    case 'fix': {
+      const wl = wlOf(d, problem);
+      const at = wl >= 0 ? `第 ${lineLabel(wl)} 行（${clip(work[wl], 60)}）` : '那一行';
+      return `改错：问题在${at}，她在草稿纸上改这一行${st.fixTries ? `，已经改了 ${st.fixTries} 次还不对` : ''}`;
+    }
+    case 'hint1': return d && d.hint1 ? `提示第 1 级，一道二选一：${clip(d.hint1.q)}` : '提示第 1 级，讲解还没出来';
+    case 'hint2':
+      return d && str(d.hint2) ? `提示第 2 级：${clip(d.hint2)}。她要从这一步接着做${st.tries ? `，已经做了 ${st.tries} 次还不对` : ''}` : '提示第 2 级，讲解还没出来';
+    case 'explain': {
+      const lead = st.noWork ? '她订正过这道题，选了直接讲正确思路。' : '';
+      const steps = (d && d.explain) || [];
+      if (!d) return `${lead}讲清楚这一屏，讲解还没出来`;
+      if (st.again) return `${lead}讲清楚：${steps.length} 步都看完了，她说还是不太懂`;
+      const n = Math.min(st.explainShown || 1, Math.max(1, steps.length));
+      return steps.length ? `${lead}讲清楚第 ${n} 步（共 ${steps.length} 步）：${clip(steps[n - 1])}` : `${lead}讲清楚这一屏`;
+    }
+    case 'sentence': {
+      const se = d && d.self_explain;
+      const what = st.noWork ? '说出这道题的关键一步' : '用一句话说出自己错在哪';
+      return se ? `${what}，一道二选一：${clip(se.q, 30)}“${clip(se.options[0], 40)}”还是“${clip(se.options[1], 40)}”` : what;
+    }
+    case 'twin': {
+      const t = st.twin || twin;
+      if (!t || !str(t.q)) return '同构题，题目还在出';
+      const last = [...(st.attempts || [])].reverse().find(a => a.kind === 'twin');
+      return `同构题（换个数自己做一道）：${clip(t.q)}${doing(t, st.twinTries && last ? str(last.given) : '')}`;
+    }
+    case 'extra': {
+      const e = st.extra || {};
+      const no = (e.count || 0) + (e.out ? 0 : 1);
+      if (!e.q) return `举一反三第 ${no} 道，题目还在出`;
+      if (e.out) {
+        const how = e.out.flagged ? '她说这道题有问题，跳过了' : e.out.ok ? '她做对了' : '她没做对，看过答案了';
+        return `举一反三第 ${no} 道：${clip(e.q.q)}（答案 ${str(e.q.answer)}，${how}）`;
+      }
+      const g = (e.givens || []).length ? str(e.givens[e.givens.length - 1]) : '';
+      return `举一反三第 ${no} 道：${clip(e.q.q)}${doing(e.q, g)}`;
+    }
+    case 'done': return st.result && st.result.light ? '这道题她自己改对了，已经收进错题本' : '这道题讲完了，已经收进错题本';
+    default: return '讲这道题';
+  }
+}
+
+// go('chat', …) 的 params（ui-chat problem 模式）。诊断回来了才带；拿不准的答案不给老师当真
+export function askParams(st = {}, problem = {}, { twin = null } = {}) {
+  const d = st.diagnosis && typeof st.diagnosis === 'object' && st.diagnosis.checked !== 'unsure' ? st.diagnosis : null;
+  return {
+    mode: 'problem', problem, ...(d ? { diagnosis: d } : {}), step: askStep(st, problem, { twin }),
+    ...(st.cardId ? { cardId: st.cardId } : {}), ...(st.chatId ? { chatId: st.chatId } : {}),
+  };
+}
+
+// ---------------------------------------------------------------- 举一反三（v0.6.0）
+
+// 收进本子以后出不出“举一反三，再来一道”：有卡、不是问老师、讲完不是还不懂、同构题没有两次都错（那时说的是“今天先到这儿”），
+// 这一次还没做满 3 道
+export function extraOffer(st) {
+  if (!st || st.step !== 'done' || !st.cardId) return false;
+  const r = st.result || {};
+  if (r.ask || st.ask || st.confused || st.twinOk === false) return false;
+  return ((st.extra && st.extra.count) || 0) < EXTRA_MAX;
+}
+
+// 从卡的池子里挑一道：没用过、没被她说有问题、核对过；不要同构题（留给明天的复习），不要今天见过的（exclude）。
+// 先近变式，其次辨析、远变式，都没有再取别的层级
+export function pickExtra(card, { exclude = [] } = {}) {
+  if (!card) return null;
+  const free = freeVariants(card, new Set(exclude.map(str).filter(Boolean)))
+    .filter(v => (v.checked === 'program' || v.checked === 'models') && str(v.level) !== '同构');
+  for (const l of EXTRA_LEVELS) { const v = free.find(x => str(x.level) === l); if (v) return v; }
+  return free[0] || null;
+}
+
+// the question she sees (ui-practice's variant question, plain data so it goes into the flow)
+export const extraQuestion = (card, v) => ({ ...variantQuestion(card || {}, v), checked: str(v && v.checked) });
+
+// 用过的题进卡的 used：隔天的复习、错题卷都不会再出这一道
+export function useExtra(card, q, at = new Date().toISOString()) {
+  const used = (card.used || []).map(str);
+  const t = str(q && q.q);
+  return { ...card, used: t && !used.includes(t) ? [...(card.used || []), t] : [...(card.used || [])], updated: at };
+}
+
+// 一道做完写进 attempts 的那一条（kind 'extra'；不调 recordReview，不算进间隔复习）
+export function extraAttempt(st = {}, { at = new Date().toISOString(), day = '' } = {}) {
+  const e = st.extra || {}, q = e.q || {}, o = e.out || {};
+  const givens = (e.givens || []).map(String);
+  return {
+    itemId: st.cardId || '', at, day, kind: 'extra', level: str(q.level), q: str(q.q), given: givens.length ? givens[givens.length - 1] : '', givens,
+    ok: !!o.ok, reason: o.self ? 'self' : str(e.reason), firstTry: !!o.firstTry, hints: Number(e.hints) || 0, ms: Number(e.ms) || 0,
+    trap: !!e.trapHit, self: !!o.self, where: 'explain',
+  };
+}
+
+// 回到收进本子那一屏时的一句：做了几道、对了几道（她说有问题的那道不算）
+export function extraSummary(extra) {
+  const res = ((extra && extra.results) || []).filter(r => r && !r.flagged);
+  if (!res.length) return '';
+  const ok = res.filter(r => r.ok).length;
+  return `${COPY.extraLabel}做了 ${res.length} 道${ok === res.length ? '，都对了。' : ok ? `，对了 ${ok} 道。` : '。'}`;
+}
+
+const freshExtra = () => ({ q: null, making: true, tries: 0, hints: 0, trapHit: false, givens: [], reason: '', notes: [], waiting: false,
+  pendingTrap: false, say: '', out: null, ms: 0 });
+
 // ---------------------------------------------------------------- the state machine
 
 // what she confirmed on screen 5: when she goes back and changes the problem, the explanation starts over
-export const problemSig = (p = {}) => JSON.stringify([p.stem, p.her_work, p.her_answer, p.mark, p.options, p.teacher_note, p.type].map(x => x ?? ''));
+// （v0.6.0：选了“直接讲”也算改了，诊断不一样；没选的签名和以前一样，讲到一半的题不会因为升级重来）
+export const problemSig = (p = {}) => JSON.stringify([p.stem, p.her_work, p.her_answer, p.mark, p.options, p.teacher_note, p.type].map(x => x ?? '')
+  .concat(noWorkOf(p) ? ['no-work'] : []));
 
 export function initState({ photoId = '', idx = 0, problem = {}, now = new Date().toISOString() } = {}) {
+  const noWork = noWorkOf(problem);
   return {
     v: 1, key: keyOf(photoId, idx), photoId: str(photoId), idx: Number(idx) || 0, step: entryStep(problem), prev: '', psig: problemSig(problem),
-    picked: null, level: -1, found: '', fixTries: 0, tries: 0, hint1Pick: null, direct: false, explainShown: 1, again: false,
+    picked: null, level: noWork ? 3 : -1, found: noWork ? 'explain' : '', fixTries: 0, tries: 0, hint1Pick: null, direct: false, explainShown: 1, again: false,
     sentencePick: null, mySentence: '', twin: null, twinTries: 0, twinOk: null, twinSkipped: false, confused: false,
     flagged: [], ask: '', error: '', note: null, attempts: [], diagnosis: null, cardId: '', result: null, startedAt: now,
+    noWork, chatId: '', extra: null,
   };
 }
 
 const note = (tone, text) => ({ tone, text });
-const ENDED = new Set(['ask', 'save', 'done']);
+// 讲完的几步：诊断、错误、“这题有问题”都不再改它们。举一反三在收进本子以后，也算讲完了
+const ENDED = new Set(['ask', 'save', 'done', 'extra']);
+// 这些事件不把屏上那句话（note）清掉：诊断回来、计时、存好了、记下对话 id（她去问我再回来，那句话还在）
+const KEEP_NOTE = new Set(['diag', 'tick', 'saved', 'chat-id']);
 
 function toExplain(s, text = '') {
   s.step = 'explain';
@@ -517,7 +727,7 @@ function resolvePick(s, d, problem) {
 export function reduce(s0, ev = {}, env = {}) {
   const problem = env.problem || {};
   const s = { ...s0, flagged: [...(s0.flagged || [])], attempts: [...(s0.attempts || [])] };
-  if (!['diag', 'tick', 'saved'].includes(ev.type)) s.note = null;
+  if (!KEEP_NOTE.has(ev.type)) s.note = null;
   if (ev.type === 'diag' && ev.diag) s.diagnosis = ev.diag;
   const d = s.diagnosis || env.diag || null;
   const short = env.short || '';
@@ -606,7 +816,7 @@ export function reduce(s0, ev = {}, env = {}) {
       const c = Number(ev.choice) === 1 ? 1 : 0;
       const right = se.options[se.answer];
       s.sentencePick = c;
-      s.mySentence = `${str(se.q) || '我错在：'}${right}`;
+      s.mySentence = sentenceOf(se, s.noWork);
       s.note = c === se.answer ? note('ok', COPY.sentenceRight) : note('info', `${COPY.sentenceFix}“${right}”。`);
       break;
     }
@@ -624,6 +834,68 @@ export function reduce(s0, ev = {}, env = {}) {
       s.error = str(ev.code) || 'http';
       break;
     case 'retry': if (s.step === 'error') { s.step = s.prev || entryStep(problem); s.error = ''; } break;
+
+    // 有问题？问我：这道题第一次去问时记下对话的 id，再问接着同一段
+    case 'chat-id': if (!s.chatId && str(ev.id)) s.chatId = str(ev.id); break;
+
+    // 举一反三（state.extra）：{ count 这一次见过几道（做完或说有问题）, results [{ ok, firstTry } | { flagged }], seen [题目],
+    //   q 这一道（extraQuestion）, making 正在出, tries, hints, trapHit, givens, reason, notes [{ text, trap }] 题下面的提示,
+    //   waiting 在等老师的提示, pendingTrap, say 一句小话（读不懂、和上次一样）, out 这一道的结果 { ok, firstTry, self?, revealed?,
+    //   trapNow?, flagged?, line? }, ms }
+    case 'extra-start':
+    case 'extra-more': {
+      const e0 = s.extra || { count: 0, results: [], seen: [] };
+      const can = ev.type === 'extra-start' ? extraOffer(s) : s.step === 'extra' && !!e0.out && (e0.count || 0) < EXTRA_MAX;
+      if (!can) break;
+      s.step = 'extra';
+      s.extra = { count: e0.count || 0, results: [...(e0.results || [])], seen: [...(e0.seen || [])], ...freshExtra() };
+      break;
+    }
+    case 'extra-q': {
+      const e = s.extra;
+      if (s.step !== 'extra' || !e || !e.making) break;
+      if (ev.q && str(ev.q.q)) s.extra = { ...e, making: false, q: ev.q, seen: [...(e.seen || []), str(ev.q.q)] };
+      else { s.extra = { ...e, making: false, q: null }; s.step = 'done'; s.note = note('info', COPY.extraNone); }
+      break;
+    }
+    case 'extra-answer': {
+      const e = s.extra;
+      if (s.step !== 'extra' || !e || !e.q || e.out || e.waiting) break;
+      const given = str(ev.given);
+      const x = { ...e, say: '', givens: [...(e.givens || [])], notes: [...(e.notes || [])], ms: (Number(e.ms) || 0) + Math.max(0, Math.round(Number(ev.ms) || 0)) };
+      if (ev.self) {   // 纸上的题、程序判不了的：她自己对照了答案
+        if (given) x.givens.push(given);
+        x.out = { ok: !!ev.ok, firstTry: !!ev.ok && !x.tries && !x.hints, self: true };
+      } else {
+        if (x.givens.length && given === str(x.givens[x.givens.length - 1])) { x.say = COPY.extraSame; s.extra = x; break; }   // 多按了一次
+        x.givens.push(given);
+        const v = { ok: ev.ok, reason: str(ev.reason), trap: !!ev.trap };
+        const r = afterSubmit({ tries: x.tries, hints: x.hints, trapHit: x.trapHit }, v);
+        Object.assign(x, { tries: r.tries, hints: r.hints, trapHit: r.trapHit, reason: v.reason || x.reason });
+        if (r.action === 'right') x.out = { ok: true, firstTry: !!r.firstTry, line: praiseLine(r, x.q) };
+        else if (r.action === 'unreadable') x.say = localHint('unreadable');
+        else if (r.action === 'hint-local') x.notes.push({ text: missLine(v, x.q), trap: v.trap });   // 撞上坑答案：“又是那个坑。”
+        else if (r.action === 'hint-remote') Object.assign(x, { waiting: true, pendingTrap: v.trap });   // 界面去要 retryHint
+        else if (r.action === 'reveal') x.out = { ok: false, firstTry: false, revealed: true, trapNow: v.trap };
+      }
+      if (x.out) { x.count = (Number(x.count) || 0) + 1; x.results = [...(x.results || []), { ok: x.out.ok, firstTry: x.out.firstTry }]; }
+      s.extra = x;
+      break;
+    }
+    case 'extra-hint': {
+      const e = s.extra;
+      if (s.step !== 'extra' || !e || !e.waiting) break;
+      const text = (e.pendingTrap ? COPY.extraTrap : '') + (str(ev.text) || COPY.lookAgain);
+      s.extra = { ...e, waiting: false, pendingTrap: false, notes: [...(e.notes || []), { text, trap: !!e.pendingTrap }] };
+      break;
+    }
+    case 'extra-flag': {
+      const e = s.extra;
+      if (s.step !== 'extra' || !e || !e.q || e.out) break;
+      s.extra = { ...e, waiting: false, out: { ok: null, flagged: true }, count: (Number(e.count) || 0) + 1, results: [...(e.results || []), { flagged: true }] };
+      break;
+    }
+    case 'extra-end': if (s.step === 'extra') { s.step = 'done'; s.extra = { ...s.extra, making: false, waiting: false }; } break;
     default: break;
   }
 
@@ -647,6 +919,7 @@ export function reduce(s0, ev = {}, env = {}) {
 const inflight = new Map();   // key -> Promise<Diagnosis>, outlives the view (she can go back and come in again)
 const early = new Map();      // key -> { p, list, done, timedOut }: variants made early because the diagnosis had no twin
 const failed = new WeakSet(); // diagnosis promises that failed: “再试一次” must not pick the flow's old one up again
+const filling = new Map();    // cardId -> Promise: the card's pool being filled in the background (举一反三 waits for it first)
 
 const withTimeout = (p, ms) => Promise.race([p, new Promise(res => setTimeout(() => res(null), ms))]);
 
@@ -664,16 +937,21 @@ export function createExplain(ctx) {
 
   const backBtn = h('button', { type: 'button', className: 'back', on: { click: () => ctx.back() } }, icon('back'), h('span', { className: 'back-label', text: COPY.backLabel }));
   const navTitle = h('span', { className: 'nav-title' });
-  const bar = h('header', { className: 'navbar' }, h('div', { className: 'inner' }, backBtn, navTitle, h('span', { className: 'nav-end' })));
+  // v0.6.0：讲题的每一屏右上角都有“有问题？问我”（askable），点了带着这一步去问
+  const askBtn = h('button', { type: 'button', className: 'text-btn accent ex-ask', hidden: true, on: { click: () => { if (cur) askChat(cur); } } },
+    icon('chat'), h('span', { text: COPY.askAny }));
+  const bar = h('header', { className: 'navbar' }, h('div', { className: 'inner' }, backBtn, navTitle, h('span', { className: 'nav-end' }, askBtn)));
   const head = h('div', { className: 'ex-prob' });
   const body = h('div', { className: 'ex-body' });
   const status = h('div', { className: 'ex-status', role: 'status', 'aria-live': 'polite' });
   const page = h('div', { className: 'page ex' }, head, body, status);
   root.replaceChildren(bar, page);
 
-  let cur = null;        // { key, photoId, idx, problem, photo, st, cropP, crop, showCrop, pending, selfCheck, slow, sig, saving }
+  let cur = null;        // { key, photoId, idx, problem, photo, st, cropP, crop, showCrop, pending, selfCheck, slow, sig, saving,
+                         //   watch（在等的诊断 promise）, draft（去问我时小键盘里没交的字）, extraBusy, hintBusy }
   let epoch = 0;
-  let answerCtl = null, answerTok = null, answerStart = 0;
+  let shown = false;     // 这一屏在不在眼前：去问我时 hide，状态照常往前走，回来再画（小键盘不在看不见的地方挂着）
+  let answerCtl = null, answerTok = null, answerStart = 0, answerWhich = '';
 
   // ------------------------------------------------ data
 
@@ -724,6 +1002,8 @@ export function createExplain(ctx) {
     }
     if (!p) p = ensureCrop(c).then(cr => pipeline().diagnose(c.problem, cr ? cr.dataURL : ''));
     inflight.set(c.key, p);
+    if (c.watch === p) return;   // 去问我再回来：还是等的这一个，不再挂一遍
+    c.watch = p;
     clearTimeout(c.slowTimer);
     c.slowTimer = setTimeout(() => { if (!c.st.diagnosis) { c.slow = true; if (cur === c) updateStatus(c); } }, SLOW_MS);
     p.then(d => {
@@ -796,10 +1076,98 @@ export function createExplain(ctx) {
   function dispatch(ev) {
     const c = cur;
     if (!c) return;
+    const prev = c.st;
     c.st = reduce(c.st, { at: new Date().toISOString(), day: today(), ...ev }, envOf(c));
     flowSet({ explain: { ...c.st, problem: c.problem } });   // the problem too: after a reload the photo may already be gone
     render();
     if ((c.st.step === 'save' || c.st.step === 'ask') && !c.saving && !c.saveFailed) saveCard(c);
+    extraEffects(c, prev);
+  }
+
+  // ------------------------------------------------ 有问题？问我（v0.6.0）
+
+  // 第一次问时记下对话 id（存进 flow），带着这一步去 chat；回来时 show() 原样接着
+  function askChat(c) {
+    if (cur !== c) return;
+    if (!c.st.chatId) dispatch({ type: 'chat-id', id: newId('c') });
+    ctx.go('chat', askParams(c.st, c.problem, { twin: c.st.step === 'twin' ? twinEnv(c) : null }));
+  }
+
+  // ------------------------------------------------ 举一反三（v0.6.0）
+
+  // 卡的读改写排成一队：后台补池子、记用过的题、她说有问题的题，谁也不盖掉谁
+  let cardChain = Promise.resolve();
+  function updateCard(id, fn) {
+    const run = cardChain.then(async () => {
+      if (!id || !store()) return null;
+      const card = await store().get('items', id);
+      if (!card) return null;
+      const next = fn(card);
+      if (next) await store().put('items', next);
+      return next;
+    });
+    cardChain = run.catch(e => { console.warn('card', e); });
+    return run;
+  }
+
+  // 每次状态变了以后：新出的题记进 used，一道做完写 attempts（或记下她说有问题），还要出题、要提示的去要
+  function extraEffects(c, prev) {
+    if (c.st.step !== 'extra') return;
+    const a = (prev && prev.extra) || {}, b = c.st.extra || {};
+    if (b.q && !(a.q && a.q.q === b.q.q)) updateCard(c.st.cardId, card => useExtra(card, b.q)).catch(() => {});
+    if (b.q && b.out && !a.out) {
+      if (b.out.flagged) updateCard(c.st.cardId, card => ({ ...flagCard(card, b.q, { day: today() }), updated: new Date().toISOString() })).catch(() => {});
+      else if (store()) Promise.resolve().then(() => store().addAttempt(extraAttempt(c.st, { at: new Date().toISOString(), day: today() }))).catch(e => console.warn('attempt', e));
+    }
+    ensureExtra(c);
+  }
+
+  function ensureExtra(c) {
+    const e = c.st.extra;
+    if (c.st.step !== 'extra' || !e) return;
+    if (e.making && !c.extraBusy) makeExtra(c);
+    if (e.waiting && !c.hintBusy) extraHint(c);
+  }
+
+  // 出一道：池子里有就用；后台还在补就等它（最多 EXTRA_WAIT_MS）；再没有当场出 EXTRA_MAKE，放进池子再挑
+  async function makeExtra(c) {
+    const st0 = c.st, e0 = st0.extra;
+    if (c.extraBusy || st0.step !== 'extra' || !e0 || !e0.making) return;
+    c.extraBusy = true;
+    const id = st0.cardId;
+    const exclude = [st0.twin && st0.twin.q, c.problem && c.problem.stem, ...(e0.seen || [])].filter(Boolean);
+    let q = null;
+    try {
+      let card = id && store() ? await store().get('items', id) : null;
+      let v = pickExtra(card, { exclude });
+      if (!v && card && filling.has(id)) {
+        await withTimeout(filling.get(id), EXTRA_WAIT_MS);
+        card = (await store().get('items', id)) || card;
+        v = pickExtra(card, { exclude });
+      }
+      if (!v && card) {
+        const list = await pipeline().variants(flatForVariants(c.problem || card.problem || {}, st0.diagnosis || card.diagnosis || {}), EXTRA_MAKE);
+        const next = await updateCard(id, fresh => ({ ...fresh, pool: poolFrom(list, fresh.pool || [], fresh.used || []), updated: new Date().toISOString() }));
+        if (next) card = next;
+        v = pickExtra(card, { exclude });
+      }
+      q = v && card ? extraQuestion(card, v) : null;
+    } catch (err) { console.warn('extra', err && (err.code || err.message)); }
+    c.extraBusy = false;
+    if (cur === c) dispatch({ type: 'extra-q', q });
+  }
+
+  // 错第二次：要一句老师的提示（模拟模式不花钱）；出错就说一句孩子听得懂的
+  async function extraHint(c) {
+    const e = c.st.extra;
+    if (c.hintBusy || !e || !e.waiting || !e.q) return;
+    c.hintBusy = true;
+    let text = '';
+    try {
+      text = await pipeline().retryHint({ q: e.q.q, given: str((e.givens || [])[e.givens.length - 1]), answer: e.q.answer, reason: e.reason }, { local: false });
+    } catch (err) { text = kidMessage(err, { where: 'hint' }) || ''; }
+    c.hintBusy = false;
+    if (cur === c) dispatch({ type: 'extra-hint', text });
   }
 
   // ------------------------------------------------ saving (第 10 屏)
@@ -844,20 +1212,24 @@ export function createExplain(ctx) {
     }
   }
 
-  // the background pool: never bothers her; a failure leaves the card as it is (practice makes new ones when it needs)
-  async function fillPool(cardId, plan, key) {
-    try {
-      let list = null;
-      const e = early.get(key);
-      if (plan.fresh && e) { await e.p; list = e.list; early.delete(key); }
-      if (!list || list.length < 2) list = await pipeline().variants(plan.flat, LEVELS);
-      const card = await store().get('items', cardId);
-      if (!card) return;
-      card.pool = poolFrom(list, card.pool, [...(card.used || []), ...(plan.exclude || [])]);
-      card.poolLow = card.pool.length < 4;
-      card.updated = new Date().toISOString();
-      await store().put('items', card);
-    } catch (err) { console.warn('variants', err && (err.code || err.message)); }
+  // the background pool: never bothers her; a failure leaves the card as it is (practice makes new ones when it needs).
+  // While it runs it sits in `filling`, so 举一反三 waits for it instead of paying for the same questions twice
+  function fillPool(cardId, plan, key) {
+    const p = (async () => {
+      try {
+        let list = null;
+        const e = early.get(key);
+        if (plan.fresh && e) { await e.p; list = e.list; early.delete(key); }
+        if (!list || list.length < 2) list = await pipeline().variants(plan.flat, LEVELS);
+        await updateCard(cardId, card => {
+          const pool = poolFrom(list, card.pool, [...(card.used || []), ...(plan.exclude || [])]);
+          return { ...card, pool, poolLow: pool.length < 4, updated: new Date().toISOString() };
+        });
+      } catch (err) { console.warn('variants', err && (err.code || err.message)); }
+    })();
+    filling.set(cardId, p);
+    p.then(() => { if (filling.get(cardId) === p) filling.delete(cardId); });
+    return p;
   }
 
   // ------------------------------------------------ leaving
@@ -895,6 +1267,7 @@ export function createExplain(ctx) {
     answerTok = null;
     if (answerCtl && typeof answerCtl.destroy === 'function') { try { answerCtl.destroy(); } catch { /* gone */ } }
     answerCtl = null;
+    answerWhich = '';
   }
 
   function mountAnswer(host, o) {
@@ -905,9 +1278,12 @@ export function createExplain(ctx) {
       if (answerTok !== tok) return;
       if (mod && typeof mod.createAnswer === 'function') {
         try {
-          const k = keysFor(o.answer, o.kind);
-          answerCtl = mod.createAnswer(host, { kind: o.kind, options: o.options || [], unit: o.unit || '', placeholder: '', onSubmit: o.onSubmit,
+          // 举一反三的题自己带字母键（ui-practice.lettersFor）；别的从答案里看
+          const k = Array.isArray(o.letters) ? { letters: o.letters.length ? o.letters : null, variable: o.variable || 'x' } : keysFor(o.answer, o.kind);
+          answerCtl = mod.createAnswer(host, { kind: o.kind, options: o.options || [], unit: o.unit || '', placeholder: '', onSubmit: o.onSubmit, context: o.context || '',
             ...(k.letters ? { letters: k.letters } : {}), variable: k.variable });
+          // 去问我之前没交的字，回来填回去
+          if (o.draft && typeof answerCtl.set === 'function') { try { answerCtl.set(o.draft); } catch { /* not a line */ } }
           return;
         } catch (e) { console.warn('keypad', e); }
       }
@@ -936,6 +1312,11 @@ export function createExplain(ctx) {
 
   function targetOf(c, which) {
     const d = c.st.diagnosis || {};
+    if (which === 'extra') {
+      const q = (c.st.extra && c.st.extra.q) || {};
+      return { answer: q.answer, kind: q.input || 'expr', form: q.form || '', trap: q.trap_answer || '', options: q.options || [], unit: q.unit || '',
+        letters: Array.isArray(q.letters) ? q.letters : [], variable: q.variable || 'x', q };
+    }
     if (which === 'twin') {
       const t = c.st.twin || twinEnv(c) || {};
       return { answer: t.answer, kind: t.answer_kind || guessKind(t.answer) || 'expr', form: t.form || '', trap: t.trap_answer || '', options: [], unit: t.unit || '' };
@@ -945,6 +1326,15 @@ export function createExplain(ctx) {
 
   function submit(c, which, given, ms = Date.now() - answerStart) {
     if (cur !== c || c.saving) return;
+    if (which === 'extra') {   // 举一反三：照复习的判法（ui-practice.judge，含坑答案）
+      const e = c.st.extra;
+      if (!e || !e.q || e.out || e.waiting) return;
+      const selfOnly = given && typeof given === 'object' && given.self;
+      const r = selfOnly ? { ok: null, reason: 'self', trap: false } : judgeQuestion(String(given ?? ''), e.q);
+      if (r.ok === null) { c.selfCheck = { which, given: selfOnly ? '' : String(given ?? ''), ms }; render(true); return; }
+      dispatch({ type: 'extra-answer', ok: r.ok, reason: r.reason, trap: r.trap, given: String(given ?? ''), ms });
+      return;
+    }
     if (which === 'orig' && !c.st.diagnosis) { c.pending = { which, given, ms }; render(true); return; }   // judged when it is back
     const self = given && typeof given === 'object' && given.self;
     const t = targetOf(c, which);
@@ -987,16 +1377,25 @@ export function createExplain(ctx) {
     const sc = c.selfCheck && c.selfCheck.which === which ? c.selfCheck : null;
     const t = targetOf(c, which);
     if (sc) {
-      const say = ok => { c.selfCheck = null; dispatch({ type: 'answer', ok, reason: 'self', trap: false, given: sc.given, ms: sc.ms }); };
-      host.append(
-        h('p', { className: 'ex-compare' }, COPY.compare, mathText(`${asMath(t.answer)}${t.unit ? ' ' + t.unit : ''}`, { className: 'ex-compare-a' })),
+      const type = which === 'extra' ? 'extra-answer' : 'answer';
+      const say = ok => { c.selfCheck = null; dispatch({ type, ok, reason: 'self', trap: false, given: sc.given, ms: sc.ms, self: true }); };
+      const shownAnswer = t.q ? questionAnswer(t.q) : `${asMath(t.answer)}${t.unit ? ' ' + t.unit : ''}`;
+      const steps = t.q && Array.isArray(t.q.steps) ? t.q.steps.slice(0, 5) : [];
+      host.append(...[
+        h('p', { className: 'ex-compare' }, COPY.compare, mathText(shownAnswer, { className: 'ex-compare-a' })),
+        steps.length ? h('ol', { className: 'ex-xsteps' }, steps.map(x => h('li', null, mathText(x)))) : null,
         h('p', { className: 'ex-compare-q', text: COPY.sameQ }),
         h('div', { className: 'btn-row' },
           h('button', { type: 'button', className: 'btn', text: COPY.same, on: { click: () => say(true) } }),
-          h('button', { type: 'button', className: 'btn quiet', text: COPY.notSame, on: { click: () => say(false) } })));
+          h('button', { type: 'button', className: 'btn quiet', text: COPY.notSame, on: { click: () => say(false) } })),
+      ].filter(Boolean));
       return host;
     }
-    mountAnswer(host, { kind: t.kind, options: t.options, unit: t.unit, answer: t.answer, onSubmit: given => submit(c, which, given) });
+    const draft = c.draft && c.draft.step === c.st.step && c.draft.which === which ? c.draft.text : '';
+    c.draft = null;
+    answerWhich = which;
+    mountAnswer(host, { kind: t.kind, options: t.options, unit: t.unit, answer: t.answer, letters: t.letters, variable: t.variable, draft, context: `${t.q || ''} ${t.answer || ''}`,
+      onSubmit: given => submit(c, which, given) });
     return host;
   }
 
@@ -1066,12 +1465,14 @@ export function createExplain(ctx) {
     const t = st.step === 'twin' ? twinEnv(c) : 0;
     return JSON.stringify([st.step, st.note, st.picked, st.hint1Pick, st.sentencePick, st.explainShown, st.again, st.fixTries,
       st.twinTries, st.tries, st.step === 'redo' ? answerKind(st.diagnosis, c.problem) : !!st.diagnosis, st.error, st.result,
-      t === undefined ? 'loading' : t ? t.q : t, c.selfCheck, !!c.pending, !!c.saveFailed, directKind(c)]);
+      t === undefined ? 'loading' : t ? t.q : t, c.selfCheck, !!c.pending, !!c.saveFailed, directKind(c), st.extra || null, askable(st)]);
   }
 
   function render(force = false) {
     const c = cur;
     if (!c) return;
+    if (!shown) { c.sig = ''; return; }   // 在问我那边：回来时 show() 整屏重画
+    askBtn.hidden = !askable(c.st);
     const sig = sigOf(c);
     if (!force && sig === c.sig) { updateStatus(c); return; }
     c.sig = sig;
@@ -1133,8 +1534,8 @@ export function createExplain(ctx) {
         const se = d.self_explain;
         const out = [
           st.sentencePick === null ? noteEl(st.note) : null,
-          label(COPY.sentenceLabel),
-          st.sentencePick === null ? h('h1', { className: 'ex-q', text: (str(se.q) || '我错在：') + '……' }) : mathText(st.mySentence, { tag: 'h1', className: 'ex-q' }),
+          label(isQuestion(se.q) ? COPY.think : COPY.sentenceLabel),
+          mathText(st.sentencePick === null ? sentenceHead(se, st.noWork) : st.mySentence, { tag: 'h1', className: 'ex-q' }),
           optButtons(se.options, st.sentencePick, se.answer, i => dispatch({ type: 'sentence', choice: i }), c.key + '#se'),
         ];
         if (st.sentencePick !== null) {
@@ -1161,6 +1562,7 @@ export function createExplain(ctx) {
         }
         return [noteEl(st.note), h('p', { className: 'ex-wait', text: COPY.saving })];
       case 'done': return doneViewEl(c);
+      case 'extra': return extraView(c);
       case 'error': {
         const code = st.error || 'http';
         const retry = canRetry(code);
@@ -1176,20 +1578,25 @@ export function createExplain(ctx) {
   }
 
   function explainView(c) {
-    const st = c.st, d = st.diagnosis || {}, p = c.problem;
+    const st = c.st, p = c.problem;
+    // 订正过、直接讲：一进来就是这一屏，诊断还没回来时先说一句、放两条灰条（底下那行“我也在看这道题……”照旧）
+    if (!st.diagnosis) return [h('h1', { className: 'ex-q', text: st.noWork ? COPY.noWorkWait : COPY.looking }), skBars([88, 64, 72])];
+    const d = st.diagnosis;
     const cv = contrast(p, d);
     const col = (lab, rows) => h('div', { className: 'ex-vs-col' }, h('p', { className: 'label', text: lab }),
       rows.map(r => h('p', { className: 'ex-vs-line' + (r.hi ? ' hi' : '') }, mathText(r.text, { className: r.hi ? 'marked' : '' }))));
     const steps = d.explain || [];
     const shown = Math.min(st.explainShown || 1, Math.max(1, steps.length));
     const allShown = shown >= steps.length;
-    const out = [
-      noteEl(st.note),
-      h('h2', { className: 'sec-h ex-sec', text: COPY.keyStep }),
-      h('div', { className: 'ex-vs' }, col(cv.mineLabel, cv.mine), col(cv.rightLabel, cv.right)),
-      steps.length ? h('ol', { className: 'ex-steps' }, steps.slice(0, shown).map((t, i) =>
-        h('li', { className: 'ex-step' + (i === shown - 1 ? ' last' : '') }, h('span', { className: 'ex-step-n', text: String(i + 1) }), mathText(t, { className: 'ex-step-t' })))) : null,
-    ];
+    const stepList = steps.length ? h('ol', { className: 'ex-steps' }, steps.slice(0, shown).map((t, i) =>
+      h('li', { className: 'ex-step' + (i === shown - 1 ? ' last' : '') }, h('span', { className: 'ex-step-n', text: String(i + 1) }), mathText(t, { className: 'ex-step-t' })))) : null;
+    const out = cv.only
+      // 只有正确的一栏：先一步步讲思路，全部点开以后再给完整过程
+      ? [noteEl(st.note), h('p', { className: 'ex-instr ex-nowork', text: COPY.noWork }), h('h2', { className: 'sec-h ex-sec', text: COPY.howTo }), stepList,
+        allShown ? h('div', { className: 'ex-solo' }, h('p', { className: 'label', text: cv.rightLabel }),
+          cv.right.map(r => h('p', { className: 'ex-vs-line' }, mathText(r.text)))) : null]
+      : [noteEl(st.note), h('h2', { className: 'sec-h ex-sec', text: COPY.keyStep }),
+        h('div', { className: 'ex-vs' }, col(cv.mineLabel, cv.mine), col(cv.rightLabel, cv.right)), stepList];
     if (!allShown) {
       out.push(h('div', { className: 'btn-row' }, h('button', { type: 'button', className: 'btn', text: COPY.nextStep, on: { click: () => dispatch({ type: 'next-step' }) } })));
     } else {
@@ -1234,24 +1641,72 @@ export function createExplain(ctx) {
       buttons = [h('button', { type: 'button', className: 'btn', text: COPY.stop, on: { click: () => stopToday(c) } })];
     }
     // v0.3：讲完还有不明白的，接着问老师（chat problem 模式带上这道题和诊断：同坑合并时卡上存的是第一道题，所以直接传刚讲的这道）。
-    // 诊断拿不准、她说“这题有问题”的不接（CONTRACTS 9）
+    // 诊断拿不准、她说“这题有问题”的不接（CONTRACTS 9）。v0.6.0：和讲题中途问的是同一段对话（askChat，chatId）
     const r = st.result || {};
     const askMe = st.cardId && r.ask !== 'unsure' && r.ask !== 'flagged'
-      ? h('div', { className: 'ex-askme' }, h('button', { type: 'button', className: 'text-btn accent', on: { click: () => ctx.go('chat', { mode: 'problem', cardId: st.cardId, problem: c.problem, diagnosis: st.diagnosis || null }) } },
+      ? h('div', { className: 'ex-askme' }, h('button', { type: 'button', className: 'text-btn accent', on: { click: () => askChat(c) } },
         icon('chat'), h('span', { text: COPY.askMe })))
+      : null;
+    // v0.6.0：举一反三，再来一道（做满 3 道就不出了）；做过的说一句
+    const sum = extraSummary(st.extra);
+    const more = extraOffer(st)
+      ? h('div', { className: 'btn-row ex-extra-row' }, h('button', { type: 'button', className: 'btn quiet', text: COPY.extra, on: { click: () => dispatch({ type: 'extra-start' }) } }))
       : null;
     return [
       noteEl(st.note),
       h('div', { className: 'ex-done reveal' },
         h('h1', { className: 'ex-done-title', text: v.title }),
         v.lines.map(t => h('p', { className: 'ex-done-line', text: t }))),
+      sum ? h('p', { className: 'ex-extra-sum', text: sum }) : null,
+      more,
       h('div', { className: 'btn-row' }, buttons),
       askMe,
     ];
   }
 
+  // 举一反三的一道题：题目、题下面的提示、小键盘；做完了是一句话（没做对的给答案和过程），再问“再来一道”还是“够了”
+  function extraView(c) {
+    const e = c.st.extra || {};
+    const no = Math.max(1, (Number(e.count) || 0) + (e.out ? 0 : 1));
+    const top = label(`${COPY.extraLabel}　第 ${no} 道`);
+    const enough = text => h('button', { type: 'button', className: 'text-btn', text, on: { click: () => dispatch({ type: 'extra-end' }) } });
+    if (!e.q) return [top, h('h1', { className: 'ex-q', text: COPY.extraMaking }), skBars([80, 56]), h('div', { className: 'btn-row' }, enough(COPY.extraEnough))];
+    const q = e.q;
+    const out = [top, mathText(q.q, { tag: 'h1', className: 'ex-q ex-twin-q' })];
+    if ((e.notes || []).length) {
+      out.push(h('ol', { className: 'ex-xhints' }, e.notes.map(n => h('li', { className: 'ex-xhint' + (n.trap ? ' trap' : '') }, mathText(n.text)))));
+    }
+    if (!e.out) {
+      if (e.waiting) out.push(h('p', { className: 'ex-wait', text: COPY.extraThinking }));
+      else {
+        if (e.say) out.push(h('p', { className: 'ex-instr', text: e.say }));
+        out.push(answerBox(c, 'extra'));
+      }
+      out.push(h('div', { className: 'ex-flag-row' }, h('button', { type: 'button', className: 'text-btn ex-flag', text: COPY.flag, on: { click: () => dispatch({ type: 'extra-flag' }) } })));
+      return out;
+    }
+    const o = e.out;
+    if (o.flagged) out.push(noteEl(note('info', COPY.flaggedTwin)));
+    else if (o.ok) out.push(noteEl(note('ok', o.self ? COPY.extraSelfOk : o.line || COPY.right)));
+    else {
+      out.push(noteEl(o.self ? note('info', COPY.extraSelfNo) : note(o.trapNow ? 'trap' : 'info', (o.trapNow ? COPY.extraTrap : '') + COPY.extraSeeAnswer)));
+      const steps = Array.isArray(q.steps) ? q.steps.slice(0, 5) : [];
+      out.push(h('div', { className: 'ex-key' }, h('p', { className: 'label', text: COPY.extraKey }), mathText(questionAnswer(q), { tag: 'p', className: 'ex-key-a' }),
+        steps.length ? h('ol', { className: 'ex-xsteps' }, steps.map(x => h('li', null, mathText(x)))) : null));
+    }
+    if ((Number(e.count) || 0) < EXTRA_MAX) {
+      out.push(h('div', { className: 'btn-row' },
+        h('button', { type: 'button', className: 'btn', text: COPY.extraMore, on: { click: () => dispatch({ type: 'extra-more' }) } }), enough(COPY.extraEnough)));
+    } else {   // 第 3 道做完：今天就到这儿，隔几天再考记得更牢
+      out.push(h('p', { className: 'ex-extra-full', text: COPY.extraFull }),
+        h('div', { className: 'btn-row' }, h('button', { type: 'button', className: 'btn', text: COPY.extraBack, on: { click: () => dispatch({ type: 'extra-end' }) } })));
+    }
+    return out;
+  }
+
   function renderMissing() {
     destroyAnswer();
+    askBtn.hidden = true;
     head.replaceChildren(); head.hidden = true;
     status.replaceChildren(); status.hidden = true;
     navTitle.textContent = '讲这道题';
@@ -1263,6 +1718,7 @@ export function createExplain(ctx) {
   // ------------------------------------------------ the view object
 
   async function show(params = {}) {
+    shown = true;
     const f = flowGet();
     const photoId = str(params.photoId ?? f.photoId);
     const idx = Number(params.idx ?? f.idx ?? 0) || 0;
@@ -1270,7 +1726,7 @@ export function createExplain(ctx) {
     const token = ++epoch;
     const fromFlow = problemFromFlow(f, photoId, idx);
     // she went back to screen 5 and changed the problem: what was worked out for the old one does not count
-    const changed = st => !!(fromFlow && st && st.step !== 'done' && st.psig && st.psig !== problemSig(fromFlow));
+    const changed = st => !!(fromFlow && st && st.step !== 'done' && st.step !== 'extra' && st.psig && st.psig !== problemSig(fromFlow));
     if (cur && (cur.key !== key || changed(cur.st))) { clearTimeout(cur.slowTimer); if (cur.key === key) inflight.delete(key); cur = null; }
     if (!cur) {
       let problem = fromFlow;
@@ -1281,6 +1737,8 @@ export function createExplain(ctx) {
       if (saved && changed(saved)) { saved = null; inflight.delete(key); }
       if (!problem && saved && saved.problem) problem = saved.problem;
       if (!problem) { renderMissing(); return; }
+      // 订正过、选了直接讲的那一下只在确认屏的 flow 里；flow 里的题没了、从照片里取题时别把它丢了
+      if (saved && saved.noWork && !noWorkOf(problem)) problem = { ...problem, useWork: false };
       const st = saved ? { ...initState({ photoId, idx, problem }), ...saved } : initState({ photoId, idx, problem });
       cur = { key, photoId, idx, problem, photo, st, sig: '' };
     }
@@ -1288,11 +1746,17 @@ export function createExplain(ctx) {
     render(true);
     ensureCrop(c);
     if (c.st.step === 'done') return;
+    if (c.st.step === 'extra') { ensureExtra(c); return; }   // 举一反三：从问我回来，或者重新打开后接着出题、要提示
     if ((c.st.step === 'save' || c.st.step === 'ask') && !c.saving) { saveCard(c); return; }
     if (c.st.step !== 'error') ensureDiag(c);
   }
 
+  // 去问我（或者别的界面）：小键盘里打了没交的字记在 cur 上，回到同一屏、同一个输入框时填回去
   function hide() {
+    shown = false;
+    if (cur && answerCtl && answerWhich && typeof answerCtl.value === 'function') {
+      try { const t = str(answerCtl.value()); cur.draft = t ? { step: cur.st.step, which: answerWhich, text: t } : null; } catch { /* gone */ }
+    }
     destroyAnswer();
     if (cur) cur.sig = '';   // draw again from scratch next time (the keypad was taken down)
   }

@@ -652,7 +652,7 @@ export function createPractice(ctx) {
         note ? h('p', { className: 'small pr-note', text: note }) : null),
       hints, askSlot, host, say, actions));
     const ans = answer = createAnswer(host, {
-      kind: q.input, options: q.options, unit: q.unit, letters: q.letters, variable: q.variable,
+      kind: q.input, options: q.options, unit: q.unit, letters: q.letters, variable: q.variable, context: `${q.q || ''} ${q.answer || ''}`,
       onSubmit: given => submit(given),
     });
     ans.focus();

@@ -46,10 +46,11 @@ export const SYSTEM = {
    - teacher_note：老师写在这道题旁边的字，照抄；没有写 ""。
    - circled：老师圈出或划线标出的内容，照抄；没有写 ""。
    - unclear：这道题有看不清、拿不准的地方写 true。
+   - corrected：这道题上有没有她自己订正过的痕迹（划掉重写、旁边写“订正”“改”、换了颜色的笔又写了一遍、老师批完后补写的过程）。有就写 true，her_work 照样把看到的都抄下来。
 5. 不要漏题，也不要编题。看不出来的写 [?]，不要猜。
 
 ${JSON_RULES}
-格式：{"graded": true, "rotation": 0, "personal": false, "page": "练习册|作业本|试卷|课本|其他", "problems": [{"no": "", "box": [0, 0, 0, 0], "type": "", "stem": "", "options": [], "figure": "", "her_work": [], "her_answer": "", "mark": "", "teacher_note": "", "circled": "", "unclear": false}]}`,
+格式：{"graded": true, "rotation": 0, "personal": false, "page": "练习册|作业本|试卷|课本|其他", "problems": [{"no": "", "box": [0, 0, 0, 0], "type": "", "stem": "", "options": [], "figure": "", "her_work": [], "her_answer": "", "mark": "", "teacher_note": "", "circled": "", "unclear": false, "corrected": false}]}`,
 
   solve: `你是初中数学老师。独立解下面这道初一数学题（2024 版人教版七年级上册的范围）。认真算，算两遍。
 注意这些常见的坑：
@@ -94,6 +95,7 @@ export function diagnoseSystem({ sections = [], tags = [] } = {}) {
 8. remember：一句她记得住的要点，可以是顺口的短句。
 9. twin：一道“同构题”，结构和原题一样、只换数字，难度相同，答案是整数或简单分数。给 answer、answer_kind、form，以及 trap_answer（按她的错误想法做会得到的答案，必须和 answer 不一样）。
 10. doubt：照片和抄好的内容对不上、看不清、题目有歧义时，用一句话写出来；没有就写 ""。
+11. 如果说明里写了“这次不参考她写的过程”（她已经订正过，卷子上的步骤不是她当时的想法）：不要分析她写的步骤，wrong_line 写 -1，wrong_step 写 ""；why 写这类题学生最容易卡在哪；explain 直接讲正确思路：先说这道题考什么，再讲关键一步为什么这样想（3 到 5 步，完整过程已经在 solution 里，explain 里不要再整段抄一遍）；hint1、hint2 照常出（她自己再做一遍卡住时用）；self_explain 改成问“这道题的关键一步是什么”的二选一。
 
 ${ANSWER_RULES}
 ${sectionsText(sections)}
@@ -130,14 +132,16 @@ const lines = arr => (arr || []).map((l, i) => `${i}: ${l}`).join('\n') || '（�
 export const userRecognize = () => '请看这张照片。';
 
 export function userDiagnose(p, { confirmed = true } = {}) {
+  const useWork = p.useWork !== false;
   return [
     `要讲的是照片里${p.no ? `第 ${p.no} 题` : '这道题'}。${confirmed ? '下面的内容学生已经核对过。' : ''}`,
+    useWork ? '' : '这次不参考她写的过程：她已经在卷子上订正过了，上面的步骤不是她当时的想法。请按第 11 条直接讲正确思路。',
     `题型：${p.type || ''}`,
     `题目：${p.stem || ''}`,
     p.options && p.options.length ? `选项：${p.options.join('；')}` : '',
     p.figure ? `图：${p.figure}` : '',
-    `她写的过程（行号从 0 开始）：\n${lines(p.her_work)}`,
-    `她的答案：${p.her_answer || '（没写）'}`,
+    useWork ? `她写的过程（行号从 0 开始）：\n${lines(p.her_work)}` : '',
+    useWork ? `她的答案：${p.her_answer || '（没写）'}` : '',
     `老师批改：${{ wrong: '打叉', half: '半对', right: '打勾', none: '没批改' }[p.mark] || p.mark || ''}`,
     p.teacher_note ? `老师写的字：${p.teacher_note}` : '',
     p.circled ? `老师圈出的地方：${p.circled}` : '',

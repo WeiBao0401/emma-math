@@ -27,7 +27,7 @@ export function reflectDue(notes = [], { today = dayOf(), events = 0 } = {}) {
   return events >= REFLECT_MIN_EVENTS;
 }
 
-const KIND = { redo: '复习原题', variant: '复习', twin: '同构题', 'self-fix': '自己改', chat: '聊天练习', paper: '错题卷' };
+const KIND = { redo: '复习原题', variant: '复习', twin: '同构题', 'self-fix': '自己改', chat: '聊天练习', paper: '错题卷', extra: '举一反三' };
 
 export function weekDigest({ cards = [], attempts = [], observations = [], profile = null, progress = '', exam = '', lastNote = null, today = dayOf(), curriculum = null } = {}) {
   const since = addDays(today, -7);

@@ -3,7 +3,7 @@
 // 确认屏的“改一行”）照这个接口用，改接口先在 CONTRACTS 第 13 节说。
 //
 // 导出
-//   createAnswer(host, { kind, options = [], unit = '', placeholder = '', onSubmit, letters, variable }) ->
+//   createAnswer(host, { kind, options = [], unit = '', placeholder = '', onSubmit, letters, variable, context }) ->
 //     { el, value(), set(text), clear(), focus(), destroy(), lock(on), fold(on) }
 //     kind   mathcheck 的 kind。number | expr | equation | set 出小键盘：计算题不出字母，expr 出 a b x y m n，
 //            equation 出“x =”，set 出“或”，unit 里有 ° 的出 ° ′ ″；choice 出选项按钮（options 是选项文字，
@@ -11,6 +11,8 @@
 //            text 出“在纸上写好了，对照看”，onSubmit 收到 { self: true }
 //     unit   印在画好的式子后面（cm、人），像卷子上印好的单位；含 ° 的不印，改出 ° ′ ″ 键
 //     letters  可选，这道题要用的字母（比如答案里有 p）；不给就按 kind 出默认的
+//     context  可选，题目（和答案）的文字：里面出现的小写字母自动放上键盘（Emma 10-25：题里有 d 却找不到 d）
+//     每个一行输入的键盘都有 π 和“ABC”（展开 a 到 z），题目里没出现的字母也打得出来
 //     variable 可选，equation 的“x =”键用哪个字母
 //     onSubmit(text)  调用方用 mathcheck.check 判。输入行的文字 mathcheck 都能读：分数写成 (a)/(b)，乘方 a^b，
 //            × ÷ − 原样，“或”隔开几个答案
@@ -19,7 +21,8 @@
 //   toLatex(text) -> LaTeX            输入行 -> mathview.renderMath 用的式子：(1)/(3) 画成分数，2^3 画成上标，空格子画成 □
 //   pressKey(state, key, { variable }) -> state      state = { text, caret }；key 是键的 id（见 KEY_INSERT）或一个字
 //   insertFrac(state), backspace(state), moveCaret(state, dir), snapCaret(text, caret)
-//   keyLayout(kind, { unit, letters, variable }) -> { a, b, c: [] }   随题型变的三个位置上放什么键
+//   keyLayout(kind, { unit, letters, variable, context }) -> { a, b, c: [] }   随题型变的三个位置上放什么键
+//   lettersFrom(text) -> ['d', 'x']   题目文字里当字母用的小写字母（去掉 \frac、cm 这类），按出现的顺序
 //   splitOption(text, i) -> { letter, text }    选项文字拆出字母
 //   normalizeChar(ch) -> 允许的字或 ''   外接键盘、set() 进来的字统一成输入行用的写法
 //   MAX_LEN
@@ -41,7 +44,7 @@ const LINE_KINDS = new Set(['number', 'expr', 'equation', 'set']);
 export const KEY_INSERT = {
   d0: '0', d1: '1', d2: '2', d3: '3', d4: '4', d5: '5', d6: '6', d7: '7', d8: '8', d9: '9',
   dot: '.', plus: '+', minus: '-', times: '×', div: '÷', eq: '=', or: '或', rp: ')',
-  deg: '°', min: '′', sec: '″', pow: '^',
+  deg: '°', min: '′', sec: '″', pow: '^', pi: 'π',
 };
 
 // 外接键盘和 set() 进来的字：统一成输入行的写法；不认识的丢掉（不会让奇怪的字进到 mathcheck）
@@ -53,7 +56,7 @@ export function normalizeChar(ch) {
     '+': '+', '＋': '+', '-': '-', '−': '-', '–': '-', '－': '-', '﹣': '-', '*': '×', '×': '×', '·': '×', '÷': '÷',
     '/': '/', '(': '(', '（': '(', '[': '(', ')': ')', '）': ')', ']': ')', '=': '=', '＝': '=', '<': '<', '>': '>',
     '≤': '≤', '≥': '≥', '^': '^', '|': '|', '°': '°', "'": '′', '′': '′', '"': '″', '″': '″', ',': ',', '，': ',',
-    '、': ',', '或': '或', '%': '%', '．': '.', '。': '.', '±': '±',
+    '、': ',', '或': '或', '%': '%', '．': '.', '。': '.', '±': '±', 'π': 'π',
   };
   return map[c] || '';
 }
@@ -278,9 +281,18 @@ export function toLatex(text) {
 // ---------------------------------------------------------------- 随题型变的键
 
 // 三个会变的位置：a（第一行倒数第二格：字母或“x =”）、b（第二行倒数第二格：“或”）、c（最后一行中间五格：字母、° ′ ″）
-export function keyLayout(kind, { unit = '', letters = null, variable = 'x' } = {}) {
+// 题目文字里当字母用的小写字母：去掉 LaTeX 命令（\frac、\text）、单位和英文词（cm、kg、abc 这种连着的两个以上字母），
+// 只留单独出现的 a 到 z；大写的点名（A、B、C、M）不算，答案里用不到
+export function lettersFrom(text) {
+  const t = String(text || '').replace(/\\[a-zA-Z]+/g, ' ').replace(/[a-zA-Z]{2,}/g, ' ');
+  return [...new Set(t.match(/[a-z]/g) || [])];
+}
+
+// 三个会变的位置：a（第一行倒数第二格：字母或“x =”）、b（第二行倒数第二格：“或”）、c（最后一行中间几格：字母、π、ABC、° ′ ″）
+export function keyLayout(kind, { unit = '', letters = null, variable = 'x', context = '' } = {}) {
   const angle = /°/.test(String(unit || ''));
-  const given = Array.isArray(letters) && letters.length ? letters : kind === 'expr' ? DEFAULT_LETTERS : [];
+  const fromText = lettersFrom(context);
+  const given = Array.isArray(letters) && letters.length ? [...letters, ...fromText] : fromText.length ? fromText : kind === 'expr' ? DEFAULT_LETTERS : [];
   const ls = [...new Set(given.map(String).filter(ch => /^[a-zA-Z]$/.test(ch)))];
   const letterKey = ch => ({ id: 'L' + ch, label: ch, aria: '字母 ' + ch, cls: 'kp-letter' });
   let a = null;
@@ -295,7 +307,9 @@ export function keyLayout(kind, { unit = '', letters = null, variable = 'x' } = 
     ls.splice(ls.indexOf(x), 1);
   }
   const angleKeys = angle ? [{ id: 'deg', label: '°', aria: '度' }, { id: 'min', label: '′', aria: '分' }, { id: 'sec', label: '″', aria: '秒' }] : [];
-  const c = [...ls.slice(0, 5 - angleKeys.length).map(letterKey), ...angleKeys];
+  const always = [{ id: 'pi', label: 'π', aria: '派', cls: 'kp-letter' }, { id: 'abc', label: 'ABC', aria: '更多字母', cls: 'kp-word' }];
+  const room = Math.max(0, 6 - angleKeys.length - always.length);
+  const c = [...ls.slice(0, room).map(letterKey), ...angleKeys, ...always];
   return { a, b, c };
 }
 
@@ -342,7 +356,7 @@ function unregister(w) {
 }
 
 // ---------------------------------------------------------------- 控件
-export function createAnswer(host, { kind = 'number', options = [], unit = '', placeholder = '', onSubmit = () => {}, letters = null, variable = 'x' } = {}) {
+export function createAnswer(host, { kind = 'number', options = [], unit = '', placeholder = '', onSubmit = () => {}, letters = null, variable = 'x', context = '' } = {}) {
   const k = LINE_KINDS.has(kind) || kind === 'choice' || kind === 'compare' || kind === 'text' ? kind : 'number';
   let locked = false;
   let state = { text: '', caret: 0 };
@@ -396,7 +410,7 @@ export function createAnswer(host, { kind = 'number', options = [], unit = '', p
     Object.assign(w, { value: () => '', set: () => {}, clear: () => {}, focus: () => { setActive(); go.focus({ preventScroll: true }); }, lockKeys: on => { go.disabled = on; } });
   } else {
     // 一行输入：上面是画好的式子，下面是她打的字和光标
-    const layout = keyLayout(k, { unit, letters, variable });
+    const layout = keyLayout(k, { unit, letters, variable, context });
     // 单位印在画好的式子后面（“3 或 7 cm”），像卷子上印好的空：她只填数
     const math = h('span', { className: 'kp-math' });
     const showUnit = unit && !/°/.test(unit) ? h('span', { className: 'kp-unit', text: unit }) : null;
@@ -410,7 +424,7 @@ export function createAnswer(host, { kind = 'number', options = [], unit = '', p
       const b = h('button', {
         type: 'button', className: 'kp-k' + (def.cls ? ' ' + def.cls : '') + (def.op ? ' kp-op' : ''), text: def.label,
         'aria-label': def.aria || null, dataset: { k: def.id },
-        on: { click: () => { setActive(); apply(def.id); } },
+        on: { click: () => { setActive(); if (def.id === 'abc') toggleAbc(); else apply(def.id); } },
       });
       if (area) b.style.gridArea = area;
       keyBtns.push(b);
@@ -446,7 +460,12 @@ export function createAnswer(host, { kind = 'number', options = [], unit = '', p
     ok.style.gridArea = 'kok';
     keyBtns.push(ok);
     keys.append(bs, mv, ok);
-    el.append(screen, keys);
+    // ABC：展开 a 到 z，题目里没出现的字母也打得出来；按一个字母就收起
+    const abc = h('div', { className: 'kp-abc', role: 'group', 'aria-label': '全部字母', hidden: true },
+      [...'abcdefghijklmnopqrstuvwxyz'].map(ch => h('button', { type: 'button', className: 'kp-k kp-letter', text: ch, 'aria-label': '字母 ' + ch,
+        on: { click: () => { setActive(); apply('L' + ch); toggleAbc(false); } } })));
+    function toggleAbc(on) { abc.hidden = on === undefined ? !abc.hidden : !on; }
+    el.append(screen, keys, abc);
 
     const shown = c => (c === '-' ? '−' : c);
     function paint() {

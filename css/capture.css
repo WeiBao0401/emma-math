@@ -131,6 +131,36 @@
 .cap-keypad:empty{min-height:48px;border-bottom:2px solid var(--rule-strong)}
 .cap-doubt-q{font:400 19px/1.5 var(--serif);color:var(--ink);text-wrap:pretty}
 
+/* 订正过的题（v0.6.0）：屏 4 的小标；屏 5 的两选一（大按钮），选“直接讲”时她写的过程折成一行、变淡 */
+.cap-pfix{align-self:center;background:transparent;border:1px solid var(--rule-strong)}
+.cap-usework{padding:16px 0 18px;border-bottom:1px solid var(--rule)}
+.cap-fixed-note{margin-bottom:8px;font:400 19px/1.5 var(--serif);color:var(--ink);text-wrap:pretty}
+.cap-usework-q{font:500 14px/1.5 var(--sans);color:var(--muted)}
+.cap-uw-opts{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;margin-top:10px}
+.cap-uw{display:flex;align-items:center;gap:12px;min-height:64px;padding:12px 16px;border:1.5px solid var(--rule-strong);border-radius:var(--radius-btn);
+  text-align:left;font:500 17px/1.4 var(--sans);color:var(--ink);transition:background-color .2s var(--ease),border-color .2s var(--ease)}
+.cap-uw.on{border-color:var(--accent);background:var(--tag-bg)}
+.cap-uw:disabled{opacity:.6}
+.cap-uw-dot{flex:none;width:26px;height:26px;display:grid;place-items:center;border:1.5px solid var(--rule-strong);border-radius:50%;
+  transition:background-color .2s var(--ease),border-color .2s var(--ease)}
+.cap-uw.on .cap-uw-dot{background:var(--accent);border-color:var(--accent);color:var(--paper)}
+.cap-uw-dot .icon{width:18px;height:18px;stroke-width:2.25}
+.cap-uw-text{flex:1;min-width:0;text-wrap:pretty}
+.cap-folded{opacity:.62}
+.cap-foldbtn{display:flex;align-items:center;gap:10px;width:100%;min-height:44px;padding:8px 6px;margin:0 -6px;border-radius:4px;text-align:left;
+  font:400 17px/1.5 var(--serif);color:var(--muted)}
+.cap-foldbtn:active{background:var(--tag-bg)}
+.cap-foldtext{flex:1;min-width:0}
+.cap-peek{flex:none;font:15px/1 var(--sans);color:var(--accent)}
+.cap-chev{flex:none;width:18px;height:18px;transform:rotate(90deg);transition:transform .2s var(--ease)}
+.cap-foldbtn[aria-expanded="true"] .cap-chev{transform:rotate(-90deg)}
+.cap-peeklist{padding:2px 0 6px;color:var(--muted)}
+.cap-work-ro li{align-items:baseline}
+.cap-work-ro .cap-ln{line-height:1.55}
+.cap-rotext{flex:1;min-width:0;font:400 17px/1.55 var(--serif);overflow-wrap:anywhere}
+.cap-roans{display:flex;align-items:baseline;gap:10px;margin-top:6px}
+.cap-roans-k{flex:none;font:500 14px/1.5 var(--sans)}
+
 @media (max-width:560px){
   .cap-go,.cap-main{min-width:0;flex:1 1 100%}
   .cap-pthumb{width:96px;height:56px}

@@ -5,6 +5,8 @@
 //
 // 路由 chat，params：{ mode: 'free' | 'probe' | 'problem', point?, cardId?, chatId?, problem?, diagnosis?, fresh? }
 //   problem、diagnosis：讲题最后一屏传刚讲的那道（同坑合并时卡上存的是第一道）；fresh：不接着上一段，另开新的
+//   step（v0.6.0）：讲题每一屏的“有问题？问我”带来，她停在哪一步，交给 problemContext；同时带 chatId（讲题屏生成），
+//     第一次就用这个 id 开新的一段，再来就接着这一段，上下文换成新的一步（refreshProblemChat）
 //   free     她自己问（首页“有问题，问我”）。30 分钟内问过，接着上一段聊；导航栏“新问题”另开一段
 //   probe    老师主动开场（首页小卡“想和你聊 3 分钟：…”）：probeUser(point) 隐藏发出，她只看到老师的话；记 kv 'probeDay'。
 //            point 来自老师的笔记本时带 opener（笔记里计划的开场问法），probeUser 交给老师
@@ -26,7 +28,8 @@
 //       text，再加一行老师的笔记本（v0.5，reflect.noteForTeacher）：note 不传时读 kv 'teacherNotes' 的最新一篇
 //       （模拟模式外不算模拟写的那些），没有笔记就不加
 //     resumable(chats, { mode, cardId, now }) -> 可以接着聊的那一段的 id | ''
-//     chipsFor(mode, profile) -> [她可以直接点的一句话]
+//     chipsFor(mode, profile, { noWork }) -> [她可以直接点的一句话]（noWork：订正过、直接讲的题，不问“错在哪”）
+//     contextProblem(problem) -> problem   直接讲的题（useWork false）去掉 her_work、her_answer 再交给 problemContext（v0.6.0）
 //     problemSource(card, params) -> { problem, diagnosis, cardId, tag } | null   problem 模式用哪道题（v0.3.1）：
 //       传来的题和诊断优先，没有用卡上的；卡找不到但传来了题目（复习的样例卡），照样能问，只是不挂在卡上
 //
@@ -58,6 +61,7 @@ export const COPY = {
   title: '问我',
   introFree: '想问什么都可以：哪道题不会、哪一步没想通、为什么要这样做。打字、说话、拍照都行。',
   introProblem: '这道题还有哪里不明白？直接问我，也可以说说你当时是怎么想的。',
+  introDirect: '这道题还有哪里不明白？直接问我。',   // 订正过、选了直接讲的题（v0.6.0）：不问她当时怎么想的
   aboutProblem: '我们在说这道题',
   herAnswer: '你当时写的：',
   thinking: '我想一想',
@@ -242,8 +246,29 @@ export function systemFor({ profile = null, kv = null, curriculum = null, today 
   return teacherSystem({ profileText, progress, exam, tags });
 }
 
-export function chipsFor(mode, profile) {
-  if (mode === 'problem') return ['我还是不明白错在哪', '换个讲法讲一遍', '出一道类似的题考考我'];
+// v0.6.0 讲题中途问我：讲题的每一屏带着 step（她停在哪一步、那一屏写着什么）和 chatId（同一道题接着同一段聊）来。
+// 接着聊的时候，题目上下文换成她现在停的这一步（诊断后来才回来的也补上），再说一句前面的对话是在哪几步问的；
+// 卡是讲完才建的，这段对话原来没挂卡就挂上。没带 step（从对话列表打开）不动。改的是传进来的 chat，也返回它
+// 订正过、选了直接讲的题（problem.useWork === false）：卷子上的过程和答案是改过以后的，不是她当时写的，
+// 不放进给老师的“她当时写的 / 她的答案”两行（teacher.problemContext 另有一句说明她订正过）
+export const contextProblem = p => (p && p.useWork === false ? { ...p, her_work: [], her_answer: '' } : p);
+
+export function refreshProblemChat(chat, params = {}) {
+  const step = str(params && params.step).trim();
+  const p = params && params.problem && typeof params.problem === 'object' ? params.problem : null;
+  if (!chat || chat.mode !== 'problem' || !step || !p) return chat;
+  const d = params.diagnosis && typeof params.diagnosis === 'object' ? params.diagnosis : {};
+  const before = (Array.isArray(chat.steps) ? chat.steps : []).filter(s => s && s !== step);
+  const said = before.length ? `${step}（前面的对话是她停在“${before.slice(-2).join('”“')}”时问的）` : step;
+  chat.context = problemContext({ problem: contextProblem(p), diagnosis: d, step: said });
+  chat.steps = [...before, step].slice(-4);
+  if (!chat.cardId && params.cardId) chat.cardId = str(params.cardId);
+  return chat;
+}
+
+export function chipsFor(mode, profile, { noWork = false } = {}) {
+  // 订正过、选了直接讲的题（v0.6.0）：讲的是正确思路，没有“错在哪”可问
+  if (mode === 'problem') return [noWork ? '这一步为什么要这样做' : '我还是不明白错在哪', '换个讲法讲一遍', '出一道类似的题考考我'];
   if (mode !== 'free') return [];
   const weak = (profile && profile.weak) || [];
   return weak.slice(0, 2).map(w => `我想弄懂“${w.name}”`);
@@ -426,7 +451,7 @@ export function createChat(ctx) {
       out.push(h('div', { className: 'chat-quick', role: 'group', 'aria-label': '快捷回答' },
         quick.map(q => h('button', { type: 'button', className: 'chat-chip', text: q, on: { click: () => send({ text: q }) } }))));
     } else if (!vis.some(m => m.role === 'user' && !m.local)) {
-      const chips = chipsFor(chat.mode, profile);
+      const chips = chipsFor(chat.mode, profile, { noWork: !!chat.noWork });
       if (chips.length) {
         out.push(h('div', { className: 'chat-quick', role: 'group', 'aria-label': '可以这样问' },
           chips.map(q => h('button', { type: 'button', className: 'chat-chip', text: q, on: { click: () => send({ text: q }) } }))));
@@ -482,7 +507,7 @@ export function createChat(ctx) {
     requestAnimationFrame(() => {
       if (!host.isConnected) return;
       try {
-        answerW = createAnswer(host, { kind: setup.kind, options: setup.options, letters: setup.letters, variable: setup.variable,
+        answerW = createAnswer(host, { kind: setup.kind, options: setup.options, letters: setup.letters, variable: setup.variable, context: `${p.q || ''} ${p.answer || ''}`,
           onSubmit: given => submitPractice(m, typeof given === 'string' ? given : '', null) });
         // 小键盘比题目高得多：画好以后让题目和小键盘都露出来
         requestAnimationFrame(() => { try { box.scrollIntoView({ block: 'end', behavior: 'smooth' }); } catch (e) { toBottom(); } });
@@ -712,6 +737,7 @@ export function createChat(ctx) {
       const c = (chat && chat.id === id) ? chat : loadStored(id);
       // 同一张卡上又讲了一道新题（同坑合并）：题目不一样就另开一段
       const other = c && mode === 'problem' && params.problem && params.problem.stem && c.stem !== params.problem.stem;
+      if (c && !other && mode === 'problem') refreshProblemChat(c, params);   // v0.6.0：讲题中途又来问，上下文换成她现在停的这一步
       if (c && !other) { chat = c; render(); ensureProfile().then(() => { if (chat === c && token === showToken) render({ keepScroll: true }); }); return; }
     }
     chat = null;
@@ -727,9 +753,14 @@ export function createChat(ctx) {
       const src = problemSource(card, params);
       if (!src) { await openChat(newChat({ mode: 'free' }), { intro: COPY.missingCard }); ensureProfile().then(() => token === showToken && render()); return; }
       const { problem, diagnosis } = src;
-      const c = newChat({ mode: 'problem', cardId: src.cardId, context: problemContext({ problem, diagnosis }), stem: problem.stem || '', tag: src.tag });
+      // v0.6.0：讲题中途来问带着 step（她停在哪一步）和 chatId（这道题第一次问时讲题屏生成的；已经有这一段就不拿它另开）
+      const given = str(params.chatId);
+      const ownId = given && !loadStored(given) ? given : undefined;
+      const c = newChat({ id: ownId, mode: 'problem', cardId: src.cardId, context: problemContext({ problem: contextProblem(problem), diagnosis, step: str(params.step) }), stem: problem.stem || '', tag: src.tag });
+      if (str(params.step)) c.steps = [str(params.step)];
       c.herAnswer = str(problem.her_answer);
-      await openChat(c, { intro: COPY.introProblem });
+      if (problem.useWork === false) { c.herAnswer = ''; c.noWork = true; }   // 订正过、选了直接讲：卷子上的已经是改过的答案，不当她当时写的
+      await openChat(c, { intro: c.noWork ? COPY.introDirect : COPY.introProblem });
       return;
     }
 

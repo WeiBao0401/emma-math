@@ -12,11 +12,16 @@
 // 另有一页“拿不准”（mockCase 'unsure'，v0.3.1）：一道计算题，模拟的讲题答案写错了（最后一步把 −9 减成了加），
 //   程序算出来对不上，pipeline 再换备用模型也一样，判成 unsure，界面进“问学校老师”，不讲。它不在 TOPICS 里：
 //   TOPICS 的每道题答案都要核对得上（tests/ai.test.mjs）。
+// 还有一页“订正过的作业”（mockCase 'corrected'，v0.6.0）：equation 那道解方程，她已经在卷子上订正过，her_work 和答案都是
+//   改过以后对的，学校老师原来批的是错，corrected 为 true。确认屏默认“直接讲正确思路”，过程折起来（ui-capture）。
+//   讲题的文字里有“这次不参考她写的过程”（prompts.js 第 11 条）时，每道仿真题都给直接讲的那一份（DIRECT）：
+//   wrong_line −1、wrong_step 空、explain 先说考什么再讲关键一步、self_explain 问关键一步。
 //
 // 导出
 //   TOPICS                                  ['powers', 'order', 'brackets', 'equation', 'geometry', 'wordproblem']
 //   RECOGNIZE_CASES                         看照片能模拟的页：'' 默认（练习册 t1）| 'brackets' | 'equation' | 'half' |
-//                                           'sideways' | 'ungraded' | 'unclear' | 'empty' | 'unsure'（家长区下拉框列的就是这些）
+//                                           'sideways' | 'ungraded' | 'unclear' | 'empty' | 'unsure' | 'corrected'
+//                                           （家长区下拉框列的就是这些）
 //   UNLISTED_CASES                          []：能用但下拉框里没有名字的页（'unsure' 0.3.1 起进了下拉框）
 //   UNSURE_STEM                             'unsure' 那页打叉的那道题（测试用）
 //   topicOf(text) -> topic                  从发给 AI 的文字里认出是哪道仿真题，认不出就是 'powers'
@@ -40,7 +45,7 @@
 //
 // 形状（和 bakeoff/prompts/*.md 一致，另加比拼报告“要改进的地方”第 2 条的 answer_kind）
 //   recognize  { graded, rotation, page, problems: [{ no, type, stem, options, figure, her_work, her_answer, mark,
-//                teacher_note, circled, unclear }] }
+//                teacher_note, circled, unclear, corrected }] }（corrected：有没有她自己订正过的痕迹，v0.6.0）
 //   explain    prompts.js diagnoseSystem 的形状：{ answer, answer_kind, form, unit, solution, wrong_line, wrong_step,
 //                error_type, tag, section, why, hint1, hint2, explain, self_explain, remember, twin, doubt }
 //   variants   { variants: [{ level: 同构 | 近变式 | 辨析 | 远变式, q, answer, answer_kind, form, unit, trap, trap_answer, steps }] }
@@ -57,13 +62,13 @@ const L = String.raw;   // LaTeX with single backslashes, exactly what a parsed 
 const copy = o => JSON.parse(JSON.stringify(o));
 
 export const TOPICS = ['powers', 'order', 'brackets', 'equation', 'geometry', 'wordproblem'];
-export const RECOGNIZE_CASES = ['', 'brackets', 'equation', 'half', 'sideways', 'ungraded', 'unclear', 'empty', 'unsure'];
+export const RECOGNIZE_CASES = ['', 'brackets', 'equation', 'half', 'sideways', 'ungraded', 'unclear', 'empty', 'unsure', 'corrected'];
 // 能用的模拟页，但家长区下拉框还没有它的中文名（ui-parent MOCK_CASE_LABELS 加上以后挪进 RECOGNIZE_CASES，parent.test 查每页都有名字）
 export const UNLISTED_CASES = [];
 export const UNSURE_STEM = L`\((-2)^3\times\frac{1}{4}-(-3)^2=\)`;
 
 const P = (no, type, stem, her_answer, mark, extra = {}) => ({
-  no, type, stem, options: [], figure: '', her_work: [], her_answer, mark, teacher_note: '', circled: '', unclear: false, ...extra,
+  no, type, stem, options: [], figure: '', her_work: [], her_answer, mark, teacher_note: '', circled: '', unclear: false, corrected: false, ...extra,
 });
 
 // ---------------------------------------------------------------- recognize: the pages
@@ -122,6 +127,15 @@ const PAGES = {
     ],
   },
   empty: { graded: false, rotation: 0, page: '其他', problems: [] },
+  // 订正过：equation 那道题，她在卷子上改过了。过程、答案都是改过以后对的（x=−11），学校老师原来批的是错
+  corrected: {
+    graded: true, rotation: 0, page: '作业本',
+    problems: [
+      P('1', '解方程', L`解方程：\(\frac{x-1}{2}-\frac{2x+1}{3}=1\)`, L`\(x=-11\)`, 'wrong', {
+        her_work: [L`解：去分母，得 \(3(x-1)-2(2x+1)=6\)`, L`去括号，得 \(3x-3-4x-2=6\)`, L`移项合并，得 \(-x=11\)`, L`\(x=-11\)`],
+        teacher_note: '?', corrected: true }),
+    ],
+  },
   // 拿不准：第 2 题她把 (−3)² 算成 6（底数乘指数），得 −8；程序算是 −11；模拟的讲题答案写成了 7（见 SHAKY）。三个都不一样
   unsure: {
     graded: true, rotation: 0, page: '练习册',
@@ -381,12 +395,79 @@ const SHAKY = {
   doubt: '',
 };
 
-function explainOf(topic) {
+// 不参考她写的过程（prompts.js diagnoseSystem 第 11 条，v0.6.0）：她订正过，确认屏选了“直接讲正确思路”，userDiagnose
+// 带上 DIRECT_MARK、不发她的过程。模拟的讲题照第 11 条：wrong_line −1、wrong_step 空，why 写这类题最容易卡在哪，
+// explain 先说考什么、再讲关键一步、最后完整过程，self_explain 问关键一步
+const DIRECT_MARK = '这次不参考她写的过程';
+const KEY_Q = '这道题的关键一步是：';
+const DIRECT = {
+  powers: {
+    why: L`这类题最容易把 \(-3^2\) 里的负号也一起平方，算成 9。`,
+    explain: [
+      '这道题考的是乘方：先看清指数管的是谁。',
+      L`关键一步：\(-3^2\) 没有括号，指数 2 只管紧挨着的 3，负号在乘方外面。`,
+      L`所以先算 \(3^2=9\)，再带上负号：\(-3^2=-9\)。`,
+      L`对比一下：\((-3)^2\) 有括号，才是 \((-3)\times(-3)=9\)。`,
+    ],
+    options: ['先看清指数只管紧挨着的 3，负号在乘方外面', '负号和 3 一起平方'],
+  },
+  order: {
+    why: '这类题最容易把后面的乘法提前算。乘除是同一级，要从左往右。',
+    explain: [
+      '这道题考的是有理数混合运算的顺序。',
+      '关键一步：乘和除是同一级，谁也不比谁优先，从左往右一步一步算。',
+      L`先算 \(-6\div 2=-3\)，再算 \(-3\times\frac{1}{3}=-1\)。`,
+    ],
+    options: ['乘除同级，从左往右算', '先算后面的乘法'],
+  },
+  brackets: {
+    why: L`这类题最容易在 \(-2\) 乘 \(-3b\) 时漏掉负负得正。`,
+    explain: [
+      '这道题考的是去括号：括号前的数要乘括号里的每一项。',
+      L`关键一步：\(-2\) 乘 \(-3b\)，两个负号相乘得正，是 \(+6b\)。`,
+      L`完整过程：\(3(2a-b)-2(a-3b)=6a-3b-2a+6b=4a+3b\)。`,
+    ],
+    options: [L`\(-2\) 乘括号里每一项，连符号一起乘`, '把括号去掉，里面的符号不变'],
+  },
+  equation: {
+    why: '这类题最容易在去分母时漏乘没有分母的那一项，比如右边的 1。',
+    explain: [
+      '这道题考的是解带分母的一元一次方程，第一步是去分母。',
+      '关键一步：两边同乘公分母 6，每一项都要乘，右边的 1 也变成 6。像天平两边一起放大 6 倍。',
+      L`去分母：\(3(x-1)-2(2x+1)=6\)；去括号：\(3x-3-4x-2=6\)；合并：\(-x-5=6\)，所以 \(x=-11\)。`,
+      L`代回去检查：\(\frac{-12}{2}-\frac{-21}{3}=-6+7=1\)，对上了。`,
+    ],
+    options: ['去分母时每一项都乘 6，右边的 1 也要乘', '只给带分母的两项乘 6'],
+  },
+  geometry: {
+    why: '这类题最容易只按图上的一种位置算，漏掉 C 在 B 外面的情况。',
+    explain: [
+      '这道题考的是线段的和差、中点，还有分类讨论。',
+      '关键一步：题目说 C 在“直线” AB 上，C 可以在 A、B 之间，也可以在 B 的外面，两种都要算。',
+      L`C 在 A、B 之间：\(AC=10-4=6\)，\(AM=3\) cm；C 在 B 外面：\(AC=10+4=14\)，\(AM=7\) cm。`,
+      '所以答案是 3 cm 或 7 cm。',
+    ],
+    options: ['C 在直线上有两种位置，分开算', '按图上的位置算一种就够'],
+  },
+  wordproblem: {
+    why: '这类题最容易把“余下”和“少”的加减弄反，解出负的组数。',
+    explain: [
+      '这道题考的是用一元一次方程解分组问题：总人数不变，用两种分法各写一次。',
+      L`关键一步：余下 3 人是人比位子多，总人数是 \(7x+3\)；少 5 人是位子没坐满，总人数是 \(8x-5\)。`,
+      L`所以 \(7x+3=8x-5\)，\(x=8\)。检验：\(7\times 8+3=59\)，\(8\times 8-5=59\)，对上了。`,
+    ],
+    options: ['余下的要加上，少的要减去，再让两种总人数相等', '余下的要减去，少的要加上'],
+  },
+};
+
+function explainOf(topic, direct = false) {
   const b = BANK[topic], m = MORE[topic];
+  const d = direct ? DIRECT[topic] : null;
   return {
     answer: m.answer, answer_kind: b.answer_kind, form: m.form || '', unit: m.unit || '', solution: [...b.steps],
-    wrong_line: m.wrong_line, wrong_step: b.wrong_step, error_type: m.error_type, tag: m.tag, section: m.section, why: b.why,
-    hint1: copy(m.hint1), hint2: m.hint2, explain: [...b.explain], self_explain: copy(m.self_explain), remember: b.remember,
+    wrong_line: d ? -1 : m.wrong_line, wrong_step: d ? '' : b.wrong_step, error_type: m.error_type, tag: m.tag, section: m.section,
+    why: d ? d.why : b.why, hint1: copy(m.hint1), hint2: m.hint2, explain: [...(d ? d.explain : b.explain)],
+    self_explain: d ? { q: KEY_Q, options: [...d.options], answer: 0 } : copy(m.self_explain), remember: b.remember,
     twin: copy(m.twin), doubt: '',
   };
 }
@@ -437,7 +518,7 @@ export function mockAnswer(task, { text = '', images = [], mockCase = '' } = {})
   const topic = TOPICS.includes(c) ? c : topicOf(text);
   const b = BANK[topic];
   if (task === 'explain' && (c === 'unsure' || isShaky(text))) return copy(SHAKY);
-  if (task === 'explain') return copy(explainOf(topic));
+  if (task === 'explain') return copy(explainOf(topic, String(text).includes(DIRECT_MARK)));
   if (task === 'variants') return copy({ variants: MORE[topic].variants.map(v => ({ form: '', unit: '', steps: ['（模拟）'], ...v })) });
   if (task === 'solve') return copy(solveOf(text, topic));
   if (task === 'hint') return copy({ hint: b.hints[0] });

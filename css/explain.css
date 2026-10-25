@@ -130,3 +130,28 @@ button.ex-line:disabled{cursor:default}
 /* v0.3：讲完最后一屏的“还有不明白的？问我” */
 .ex-askme{margin-top:28px;padding-top:16px;border-top:1px solid var(--rule)}
 .ex-askme .text-btn{margin:0 -10px;font-size:16px;display:inline-flex;align-items:center;gap:8px}
+
+/* v0.6.0：讲题每一屏右上角的“有问题？问我”。导航栏一直在顶上，按钮就一直够得着，不用滚到小键盘下面去找 */
+.text-btn.ex-ask{display:inline-flex;align-items:center;gap:6px;margin:0 -10px 0 0;font-size:15px;white-space:nowrap}
+.text-btn.ex-ask .icon{width:20px;height:20px}
+@media (max-width:420px){.text-btn.ex-ask{font-size:14px;gap:4px}}
+
+/* 订正过、直接讲：一句说明，然后只有正确的一栏（完整过程放在一步步讲完以后） */
+.ex-instr.ex-nowork{margin-bottom:-4px}
+.ex-solo{padding:12px 0 14px;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+.ex-solo .label{margin-bottom:6px}
+.ex-solo .ex-vs-line{color:var(--ink)}
+
+/* 举一反三：题下面的提示像页边的批注；撞上坑的那条用记号笔的黄 */
+.ex-extra-row{margin-top:6px}
+.ex-extra-sum{font:400 17px/1.55 var(--serif);color:var(--muted);margin-top:-6px}
+.ex-xhints{display:flex;flex-direction:column;gap:10px}
+.ex-xhint{border-left:2px solid var(--accent);padding:2px 0 2px 14px;font:17px/1.6 var(--sans);color:var(--ink);text-wrap:pretty;overflow-wrap:anywhere}
+.ex-xhint.trap{border-left-color:var(--marker);background:color-mix(in srgb,var(--marker) 22%,transparent);padding:8px 12px 8px 14px;border-radius:0 4px 4px 0}
+.ex-key{padding:12px 0 14px;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+.ex-key .label{margin-bottom:6px}
+.ex-key-a{font:600 22px/1.45 var(--serif);color:var(--ink);overflow-wrap:anywhere}
+.ex-xsteps{display:flex;flex-direction:column;gap:6px;margin-top:10px;padding-left:1.4em;list-style:decimal;font:17px/1.6 var(--sans);color:var(--ink)}
+.ex-xsteps li{overflow-wrap:anywhere}
+.ex-answer .ex-xsteps{margin:0 0 10px}
+.ex-extra-full{font:500 19px/1.5 var(--serif);color:var(--ink)}

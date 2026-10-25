@@ -47,6 +47,10 @@
 .kp-blank{display:block}
 .kp-c,.kp-mv{display:flex;gap:inherit;min-width:0}
 .kp-c .kp-k,.kp-mv .kp-k{flex:1 1 0}
+/* ABC：a 到 z 全部字母，键盘下面展开一块 */
+.kp-abc{display:grid;grid-template-columns:repeat(9,minmax(0,1fr));gap:6px;margin-top:8px}
+.kp-abc[hidden]{display:none}
+.kp-abc .kp-k{min-height:46px;font-size:22px}
 
 /* the question is done: keys go away, her answer stays on the screen */
 .kp-folded .kp-keys{display:none}
