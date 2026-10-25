@@ -18,7 +18,7 @@
 //
 // 依赖：无。只放常量，不放 Key、本机路径、学生数据（web/ 是公开仓库）。
 
-export const VERSION = '0.6.2';
+export const VERSION = '0.6.3';
 export const APP_NAME = 'Emma 的数学老师';
 export const DB_NAME = 'emmamath', DB_VERSION = 1;
 export const LS_PREFIX = 'emmamath.';

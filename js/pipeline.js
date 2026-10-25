@@ -97,6 +97,8 @@ function normalizeVariant(v) {
 // the checker must not share the generator's family: Claude-made answers go to Gemini, everything else to Claude
 // the third opinion when the explainer and the checker disagree: a third family
 export const TIEBREAK_MODEL = 'gpt-5.4';
+// three different answers: the strongest model works it out carefully and decides
+export const JUDGE_MODEL = 'claude-opus-4.8';
 
 export function otherFamily(model) {
   const fam = m => (/^claude/i.test(m || '') ? 'claude' : /^gemini/i.test(m || '') ? 'gemini' : String(m || ''));
@@ -171,6 +173,14 @@ export function createPipeline({ ai, curriculum = {} } = {}) {
     const a2 = str(s2.json.answer);
     if (check(a2, answer, { kind }).ok === true) return { status: 'models', by: `${s1.model} / ${s2.model}`, outvoted: a1 };
     if (check(a2, a1, { kind }).ok === true) return { status: 'conflict', by: `${s1.model} + ${s2.model}`, other: a1 };
+    // three answers: try harder before settling. The strongest model works it out carefully and picks (Wei 10-25:
+    // do its best to give the best answer; only a truly ambiguous problem gets a caveat)
+    const s3 = await solveBy(JUDGE_MODEL, `${q}\n\n（几位老师算出了不同的答案：${answer}；${a1}；${a2}。请你独立、认真地算两遍，给出你确定的答案；题目本身有歧义或条件不够时 unsure 写 true。）`, signal);
+    if (s3.ok && !s3.json.unsure && str(s3.json.answer)) {
+      const a3 = str(s3.json.answer);
+      if (check(a3, answer, { kind }).ok === true) return { status: 'models', by: `${JUDGE_MODEL} 裁定`, outvoted: a1 };
+      return { status: 'conflict', by: `${JUDGE_MODEL} 裁定`, other: a3 };
+    }
     return { status: 'split', by: `${s1.model} / ${s2.model}`, other: a1, third: a2 };
   }
   const good = v => v && (v.status === 'program' || v.status === 'models');
