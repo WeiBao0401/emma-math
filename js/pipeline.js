@@ -20,8 +20,10 @@
 // Diagnosis { answer, answer_kind, form, unit, solution, wrong_line, wrong_step, error_type, tag, section, why,
 //             hint1: { q, options, answer }, hint2, explain, self_explain: { q, options, answer }, remember,
 //             twin: { q, answer, answer_kind, form, trap_answer } | null, doubt,
-//             checked: 'program' | 'models' | 'unsure', model, checkModel }
-//             checked 'unsure' = the answer could not be confirmed: the UI must not teach it (“问问老师”)
+//             checked: 'program' | 'models' | 'soft' | 'unsure', model, checkModel, checkWhy }
+//             'soft' = could not confirm (the check failed, the checker was unsure, wording not comparable): teach it,
+//             with a quiet line that she can flag it. 'unsure' = three models, three answers, or a sure-wrong answer that
+//             could not be taught again: “问问学校老师”
 // Variant   { level, q, answer, answer_kind, form, unit, trap, trap_answer, steps, checked: 'program' | 'models' }
 import { TASKS } from './config.js';
 import { check, compute } from './mathcheck.js';
@@ -92,6 +94,9 @@ function normalizeVariant(v) {
 }
 
 // the checker must not share the generator's family: Claude-made answers go to Gemini, everything else to Claude
+// the third opinion when the explainer and the checker disagree: a third family
+export const TIEBREAK_MODEL = 'gpt-5.4';
+
 export function otherFamily(model) {
   const fam = m => (/^claude/i.test(m || '') ? 'claude' : /^gemini/i.test(m || '') ? 'gemini' : String(m || ''));
   return fam(model) === fam(TASKS.solve.model) ? 'claude-haiku-5.5' : TASKS.solve.model;
@@ -121,6 +126,25 @@ export function createPipeline({ ai, curriculum = {} } = {}) {
   }
 
   // checked by the program when it can work the question out itself, else by a model of another family
+  // One independent solve by a given model, retried once when the call itself fails (a timeout is not a disagreement)
+  async function solveBy(model, q, signal) {
+    for (let i = 0; i < 2; i++) {
+      try {
+        const s = await ai.ask('solve', { system: SYSTEM.solve, text: userSolve(q), signal, model, fallback: '' });
+        return { ok: true, model: s.model, json: s.json || {} };
+      } catch (e) {
+        if (e && e.code === 'abort') throw e;
+        if (e && /^(nokey|badkey|badrelay|billing|budget-day|offline)$/.test(e.code || '')) return { ok: false, error: e.code };
+      }
+    }
+    return { ok: false, error: 'failed' };
+  }
+
+  // Wei 10-25: only a sure wrong answer stops the teaching. The program's own answer is sure; otherwise the majority of
+  // three models decides. A check that fails, a checker that is unsure, or wording the program cannot compare is
+  // 'soft': she still gets the explanation, with a quiet line that she can flag it.
+  //   status: 'program' | 'models' (agreed) | 'conflict' (sure it is wrong; other = the right answer) | 'split' (three
+  //   different answers) | 'soft' (could not confirm) | 'no-trap' (a variant her mistake would not catch)
   async function verify({ q, answer, answer_kind = '', form = '', trap_answer = '', generator = '' }, { signal } = {}) {
     if (!str(answer)) return { status: 'conflict', by: 'none' };
     const opts = { kind: answer_kind || '', form };
@@ -131,28 +155,30 @@ export function createPipeline({ ai, curriculum = {} } = {}) {
       if (r.ok === true) return { status: 'program', by: 'program' };
       if (r.ok === false) return { status: 'conflict', by: 'program', other: c.answer };
     }
-    const model = otherFamily(generator);
-    let s;
-    try { s = await ai.ask('solve', { system: SYSTEM.solve, text: userSolve(q), signal, model, fallback: '' }); } catch (e) {   // no fallback: it could be the generator's own family
-      if (e && e.code === 'abort') throw e;
-      return { status: 'unsure', by: model, error: e && e.code };
-    }
-    const j = s.json || {};
-    if (j.unsure) return { status: 'unsure', by: s.model };
-    const r = check(str(j.answer), answer, { kind: answer_kind || kindOf(j.answer_kind) || '' });
-    if (r.ok === true) return { status: 'models', by: s.model };
-    if (r.ok === false) return { status: 'conflict', by: s.model, other: str(j.answer) };
-    // text answers the program cannot compare: same words after trimming punctuation count as agreement
+    const first = otherFamily(generator);
+    const s1 = await solveBy(first, q, signal);
+    if (!s1.ok || s1.json.unsure) return { status: 'soft', by: first, why: s1.ok ? 'unsure' : s1.error };
+    const kind = answer_kind || kindOf(s1.json.answer_kind) || '';
+    const a1 = str(s1.json.answer);
+    const r1 = check(a1, answer, { kind });
+    if (r1.ok === true) return { status: 'models', by: s1.model };
     const bare = x => str(x).replace(/[\s，。,.；;：:“”"'（）()]/g, '');
-    return bare(j.answer) && bare(j.answer) === bare(answer) ? { status: 'models', by: s.model } : { status: 'unsure', by: s.model, other: str(j.answer) };
+    if (r1.ok === null) return bare(a1) && bare(a1) === bare(answer) ? { status: 'models', by: s1.model } : { status: 'soft', by: s1.model, why: 'wording', other: a1 };
+    // the two disagree: a third model of a third family settles it
+    const s2 = await solveBy(TIEBREAK_MODEL, q, signal);
+    if (!s2.ok || s2.json.unsure) return { status: 'soft', by: s1.model, why: 'tiebreak-failed', other: a1 };
+    const a2 = str(s2.json.answer);
+    if (check(a2, answer, { kind }).ok === true) return { status: 'models', by: `${s1.model} / ${s2.model}`, outvoted: a1 };
+    if (check(a2, a1, { kind }).ok === true) return { status: 'conflict', by: `${s1.model} + ${s2.model}`, other: a1 };
+    return { status: 'split', by: `${s1.model} / ${s2.model}`, other: a1, third: a2 };
   }
-
   const good = v => v && (v.status === 'program' || v.status === 'models');
 
   // the main answer and the twin problem are checked at the same time (each check can take a model call)
   async function diagnoseOnce(problem, imageURL, model, signal) {
     const r = await ai.ask('explain', {
-      system: diagnoseSystem({ sections, tags }), text: userDiagnose(problem), images: imageURL ? [imageURL] : [], signal, model,
+      system: diagnoseSystem({ sections, tags }), text: userDiagnose(problem) + (problem.knownAnswer ? `\n\n这道题的正确答案已经核对过：${problem.knownAnswer}。请按这个答案讲，不要改答案。` : ''),
+      images: imageURL ? [imageURL] : [], signal, model,
       ...(model ? { fallback: '' } : {}),
     });
     const d = normalizeDiagnosis(r.json);
@@ -166,15 +192,17 @@ export function createPipeline({ ai, curriculum = {} } = {}) {
 
   async function diagnose(problem, imageURL, { signal } = {}) {
     let { d, v, tv, model } = await diagnoseOnce(problem, imageURL, undefined, signal);
-    // the program or the second model disagrees: one more try with the fallback model, then give up teaching it
-    if (!good(v)) {
+    // sure it is wrong and we know the right answer: teach again with that answer given (one more call, the fallback model)
+    if (v.status === 'conflict' && str(v.other)) {
       try {
-        const again = await diagnoseOnce(problem, imageURL, TASKS.explain.fallback, signal);
+        const again = await diagnoseOnce({ ...problem, knownAnswer: v.other }, imageURL, TASKS.explain.fallback, signal);
         if (good(again.v)) ({ d, v, tv, model } = again);
+        else if (check(again.d.answer, v.other, { kind: again.d.answer_kind || '' }).ok === true) ({ d, tv, model } = again), (v = { status: 'models', by: v.by });
       } catch (e) { if (e && e.code === 'abort') throw e; }
     }
-    const twin = good(v) && d.twin && good(tv) ? { ...d.twin, checked: tv.status } : null;
-    return { ...d, twin, checked: good(v) ? v.status : 'unsure', model, checkModel: v.by, other: v.other || '' };
+    const checked = good(v) ? v.status : v.status === 'soft' ? 'soft' : 'unsure';
+    const twin = (good(v) || checked === 'soft') && d.twin && good(tv) ? { ...d.twin, checked: tv.status } : null;
+    return { ...d, twin, checked, model, checkModel: v.by, other: v.other || '', checkWhy: v.why || v.status };
   }
 
   async function variants(card, levels = ['同构', '近变式', '近变式', '辨析'], { signal } = {}) {

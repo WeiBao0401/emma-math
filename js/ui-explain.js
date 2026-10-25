@@ -130,6 +130,7 @@ export const COPY = {
   saveNow: '先收进本子',
   askTeacher: '记下来问学校老师',
   flag: '这题有问题',
+  softCheck: '这道题我核对得不太确定。你觉得哪里不对，点右上角“有问题？问我”和我说。',
   flaggedTwin: '记下了，这道题不算。',
   sentenceLabel: '补全这句话',
   sentenceRight: '对，就是这样。',
@@ -1583,6 +1584,8 @@ export function createExplain(ctx) {
     if (!st.diagnosis) return [h('h1', { className: 'ex-q', text: st.noWork ? COPY.noWorkWait : COPY.looking }), skBars([88, 64, 72])];
     const d = st.diagnosis;
     const cv = contrast(p, d);
+    // 核对没能确认（核对失败、核对的模型拿不准、文字答案比不了）：照样讲，提一句她可以说（Wei 10-25）
+    const soft = d.checked === 'soft' ? h('p', { className: 'small ex-soft', text: COPY.softCheck }) : null;
     const col = (lab, rows) => h('div', { className: 'ex-vs-col' }, h('p', { className: 'label', text: lab }),
       rows.map(r => h('p', { className: 'ex-vs-line' + (r.hi ? ' hi' : '') }, mathText(r.text, { className: r.hi ? 'marked' : '' }))));
     const steps = d.explain || [];
@@ -1592,10 +1595,10 @@ export function createExplain(ctx) {
       h('li', { className: 'ex-step' + (i === shown - 1 ? ' last' : '') }, h('span', { className: 'ex-step-n', text: String(i + 1) }), mathText(t, { className: 'ex-step-t' })))) : null;
     const out = cv.only
       // 只有正确的一栏：先一步步讲思路，全部点开以后再给完整过程
-      ? [noteEl(st.note), h('p', { className: 'ex-instr ex-nowork', text: COPY.noWork }), h('h2', { className: 'sec-h ex-sec', text: COPY.howTo }), stepList,
+      ? [noteEl(st.note), soft, h('p', { className: 'ex-instr ex-nowork', text: COPY.noWork }), h('h2', { className: 'sec-h ex-sec', text: COPY.howTo }), stepList,
         allShown ? h('div', { className: 'ex-solo' }, h('p', { className: 'label', text: cv.rightLabel }),
           cv.right.map(r => h('p', { className: 'ex-vs-line' }, mathText(r.text)))) : null]
-      : [noteEl(st.note), h('h2', { className: 'sec-h ex-sec', text: COPY.keyStep }),
+      : [noteEl(st.note), soft, h('h2', { className: 'sec-h ex-sec', text: COPY.keyStep }),
         h('div', { className: 'ex-vs' }, col(cv.mineLabel, cv.mine), col(cv.rightLabel, cv.right)), stepList];
     if (!allShown) {
       out.push(h('div', { className: 'btn-row' }, h('button', { type: 'button', className: 'btn', text: COPY.nextStep, on: { click: () => dispatch({ type: 'next-step' }) } })));

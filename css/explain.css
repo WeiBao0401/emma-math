@@ -155,3 +155,6 @@ button.ex-line:disabled{cursor:default}
 .ex-xsteps li{overflow-wrap:anywhere}
 .ex-answer .ex-xsteps{margin:0 0 10px}
 .ex-extra-full{font:500 19px/1.5 var(--serif);color:var(--ink)}
+
+/* 核对没能确认时的一句小字（v0.6.1） */
+.ex-soft{margin:0 0 10px;color:var(--muted)}
