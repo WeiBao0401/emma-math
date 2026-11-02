@@ -1,0 +1,100 @@
+/* 画给她看（visual.js 的图）和小实验（lab.js 的互动页）。颜色全用 base.css 的 token，深色模式跟着变。 */
+.vz{margin:14px 0 6px;padding:14px 14px 10px;border:1px solid var(--rule);border-radius:10px;background:color-mix(in srgb,var(--paper) 88%,var(--tag-bg))}
+.vz-stage{overflow:hidden}
+.vz-svg{display:block;width:100%;height:auto;max-height:340px;font:15px/1 var(--sans)}
+.vz-axis{stroke:var(--ink);stroke-width:2;fill:none}
+.vz-axis.dash{stroke-dasharray:6 6;stroke:var(--muted)}
+.vz-ahead{fill:var(--ink)}
+.vz-tick{stroke:var(--ink);stroke-width:1.5}
+.vz-tick.zero{stroke-width:2.5}
+.vz-num{fill:var(--muted);font-size:15px}
+.vz-num.zero{fill:var(--ink);font-weight:600}
+.vz-dot{fill:var(--accent)}
+.vz-dot.small{fill:var(--muted)}
+.vz-dot.drag{fill:var(--accent);stroke:var(--paper);stroke-width:3;cursor:grab;filter:drop-shadow(0 1px 2px rgba(0,0,0,.25))}
+.vz-ghost{fill:none;stroke:var(--danger);stroke-width:2;stroke-dasharray:3 3}
+.vz-mirror{stroke:var(--danger);stroke-width:1;opacity:.5}
+.vz-name{fill:var(--ink);font-size:16px;font-weight:600}
+.vz-name,.vz-lab,.vz-num{paint-order:stroke;stroke:color-mix(in srgb,var(--paper) 88%,var(--tag-bg));stroke-width:5px;stroke-linejoin:round}
+.vz-lab.in{stroke:none}
+.vz-lab{fill:var(--muted);font-size:15px}
+.vz-lab.hl{fill:var(--accent);font-weight:600}
+.vz-lab.other{fill:var(--danger);font-weight:600}
+.vz-lab.in{fill:var(--ink);font-size:14px}
+.vz-brace{stroke:var(--accent);stroke-width:1.6;fill:none}
+.vz-brace.soft{stroke:var(--muted);stroke-dasharray:4 3}
+.vz-jump{stroke:var(--muted);stroke-width:2;fill:none}
+.vz-jump.cur{stroke:var(--accent);stroke-width:2.6}
+.vz-arc{stroke:var(--accent);stroke-width:2;fill:none}
+.vz-arc.other{stroke:var(--danger)}
+.vz-right{stroke:var(--muted);fill:none;stroke-width:1.4}
+.vz-part{stroke:var(--paper);stroke-width:2}
+.vz-part.p0{fill:color-mix(in srgb,var(--accent) 34%,var(--paper))}
+.vz-part.p1{fill:color-mix(in srgb,var(--marker) 70%,var(--paper))}
+.vz-part.p2{fill:color-mix(in srgb,var(--danger) 26%,var(--paper))}
+.vz-part.p3{fill:color-mix(in srgb,var(--muted) 30%,var(--paper))}
+.vz-part.unknown{stroke:var(--ink);stroke-dasharray:5 4;stroke-width:1.4}
+.vz-row{transition:opacity .35s var(--ease)}
+.vz-row.later{opacity:.12}
+.vz-beam{stroke:var(--ink);stroke-width:5;stroke-linecap:round}
+.vz-stand{fill:color-mix(in srgb,var(--ink) 18%,var(--paper))}
+.vz-pivot{fill:var(--ink)}
+.vz-pan{fill:none;stroke:var(--muted);stroke-width:1.2}
+.vz-pan-base{fill:color-mix(in srgb,var(--ink) 8%,transparent);stroke:var(--ink);stroke-width:3;stroke-linecap:round}
+
+.vz-ctrl{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px}
+.vz-btn{min-height:40px;padding:0 16px;border-radius:var(--radius-btn);border:0;background:var(--btn-bg);color:var(--btn-ink);font:600 15px var(--sans)}
+.vz-btn.quiet{background:transparent;color:var(--accent);border:1px solid var(--rule-strong)}
+.vz-btn.case{background:transparent;color:var(--ink);border:1px solid var(--rule-strong)}
+.vz-btn.case.on{background:var(--btn-bg);color:var(--btn-ink);border-color:transparent}
+.vz-count{color:var(--faint);font-size:14px;margin-left:auto}
+.vz-tip{color:var(--muted);font-size:14px}
+.vz-readout{margin:6px 0 0;color:var(--ink);font-size:16px}
+.vz-cap{margin:10px 0 0;color:var(--muted);font-size:15px;line-height:1.5}
+.vz-do{margin:0 0 8px;font-size:16px;color:var(--accent);font-weight:600}
+.vz-do.muted{color:var(--muted);font-weight:400}
+
+.vz-scale{position:relative}
+.vz-pan-t{position:absolute;bottom:22%;width:30%;text-align:center;font-size:20px;line-height:1.2;padding:5px 0;background:var(--marker);color:var(--marker-ink);border-radius:6px}
+.vz-pan-t.l{left:6.9%}
+.vz-pan-t.r{right:6.9%}
+.vz-pan-t.pop{animation:vz-pop .5s var(--ease)}
+@keyframes vz-pop{0%{transform:translateY(-8px);opacity:.3}100%{transform:none;opacity:1}}
+.vz-chain{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:4px 14px;color:var(--muted);font-size:16px}
+.vz-chain li+li::before{content:"→";margin-right:14px;color:var(--faint)}
+.vz-chain li.cur{color:var(--ink);font-weight:600}
+
+.vz-tile-row{display:flex;flex-wrap:wrap;gap:8px}
+.vz-tile{display:inline-flex;align-items:center;min-height:42px;padding:0 14px;border-radius:8px;font-size:19px;color:var(--ink)}
+.vz-tile.c0,.vz-group.c0{background:color-mix(in srgb,var(--accent) 26%,var(--paper))}
+.vz-tile.c1,.vz-group.c1{background:color-mix(in srgb,var(--marker) 62%,var(--paper))}
+.vz-tile.c2,.vz-group.c2{background:color-mix(in srgb,var(--danger) 22%,var(--paper))}
+.vz-tile.c3,.vz-group.c3{background:color-mix(in srgb,#5B7FC4 26%,var(--paper))}
+.vz-tile.c4,.vz-group.c4{background:color-mix(in srgb,var(--muted) 24%,var(--paper))}
+.vz-groups{display:flex;flex-wrap:wrap;gap:10px}
+.vz-group{padding:8px;border-radius:10px;animation:vz-pop .45s var(--ease)}
+.vz-group .vz-tile{background:var(--paper)}
+.vz-merged{margin:8px 2px 0;font-size:20px;font-weight:600;text-align:center}
+.vz-result{margin:12px 0 0;font-size:19px}
+
+.vz-cmp{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.vz-cmp-col{padding:10px 12px;border-radius:8px;background:var(--paper);border:1px solid var(--rule)}
+.vz-cmp-t{margin:0 0 6px;font-size:21px;font-weight:600}
+.vz-cmp-l{display:table;margin:2px 0;font-size:18px;transition:opacity .3s var(--ease)}
+.vz-cmp-l.later{opacity:0}
+.vz-cmp-l.diff{background:linear-gradient(transparent 55%,var(--marker) 55%)}
+
+/* 小实验（lab.js）：沙盒 iframe */
+.lab{margin:14px 0 6px;border:1px solid var(--rule);border-radius:10px;overflow:hidden;background:#fff}
+.lab-frame{display:block;width:100%;height:420px;border:0;background:#fff}
+.lab-bar{display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--paper);border-top:1px solid var(--rule);font-size:14px;color:var(--muted)}
+.lab-bar .text-btn{margin-left:auto}
+.lab-wait{margin:14px 0;padding:14px;border:1px dashed var(--rule-strong);border-radius:10px;color:var(--muted)}
+.lab-ask{display:inline-flex;align-items:center;gap:6px}
+
+/* 讲题屏：图在那一步的文字下面另起一行，和文字左边对齐 */
+.ex-step{flex-wrap:wrap}
+.ex-step-t{flex:1 1 0}
+.ex-step>.vz{flex:0 0 100%;margin:4px 0 0 calc(1.3em + 14px);max-width:calc(100% - 1.3em - 14px);box-sizing:border-box}
+.ex-lab{margin:6px 0 4px}
+.ex-lab-row{align-items:center}

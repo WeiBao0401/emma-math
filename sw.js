@@ -4,20 +4,20 @@
 //   这里的缓存一律叫 "emmamath-…"，也只删 "emmamath-" 开头的旧缓存。
 //   绝不能叫 "emma-…"：英语老师的 sw.js 会删掉所有 "emma-" 开头、不是它自己版本的缓存。
 // Poe、中转站的请求是别的源，直接走网络，这里不碰。照片和错题在 IndexedDB 里，也不经过这里。
-const VERSION = '0.10.0';
+const VERSION = '0.11.0';
 const CACHE = 'emmamath-' + VERSION;
 // 要离线能用的全部文件。web/js、web/css、web/curriculum 下新加文件要加进来（测试检查两个方向：列了的都存在，存在的都列了）。
 // curriculum/ 是公开的课本目录和错因表（几十 KB），跟着版本走，不单独分缓存。
 const SHELL = [
-  './', 'index.html', 'manifest.webmanifest', 'icon-180.png', 'icon-192.png', 'icon-512.png',
+  './', 'index.html', 'lab.html', 'manifest.webmanifest', 'icon-180.png', 'icon-192.png', 'icon-512.png',
   'css/base.css', 'css/math.css', 'css/keypad.css',
-  'css/home.css', 'css/capture.css', 'css/explain.css', 'css/practice.css', 'css/book.css', 'css/onboard.css', 'css/parent.css', 'css/chat.css', 'css/paper.css', 'css/bookmap.css', 'css/quiz.css', 'css/waitfun.css',
+  'css/home.css', 'css/capture.css', 'css/explain.css', 'css/practice.css', 'css/book.css', 'css/onboard.css', 'css/parent.css', 'css/chat.css', 'css/paper.css', 'css/bookmap.css', 'css/quiz.css', 'css/waitfun.css', 'css/visual.css',
   'js/app.js', 'js/nav.js', 'js/ui-dom.js', 'js/flow.js',
   'js/config.js', 'js/ai.js', 'js/budget.js', 'js/kid-errors.js', 'js/mock.js',
   'js/db.js', 'js/image.js', 'js/mathcheck.js', 'js/mathview.js',
   'js/prompts.js', 'js/pipeline.js', 'js/notebook.js', 'js/curriculum.js',
   'js/keypad.js',
-  'js/teacher.js', 'js/md.js', 'js/bookmap.js', 'js/ui-bookmap.js', 'js/quiz.js', 'js/ui-quiz.js', 'js/waitfun.js', 'js/voice.js', 'js/voice-input.js', 'js/voice-stream.js', 'js/pcm-tap-worklet.js', 'js/profile.js', 'js/paper.js', 'js/templates.js', 'js/triage.js', 'js/reflect.js', 'js/notes.js',
+  'js/teacher.js', 'js/md.js', 'js/bookmap.js', 'js/ui-bookmap.js', 'js/quiz.js', 'js/ui-quiz.js', 'js/waitfun.js', 'js/voice.js', 'js/voice-input.js', 'js/voice-stream.js', 'js/pcm-tap-worklet.js', 'js/profile.js', 'js/paper.js', 'js/templates.js', 'js/triage.js', 'js/reflect.js', 'js/notes.js', 'js/visual.js', 'js/lab.js',
   'js/ui-home.js', 'js/ui-capture.js', 'js/ui-explain.js', 'js/ui-practice.js', 'js/ui-book.js', 'js/ui-onboard.js', 'js/ui-parent.js', 'js/ui-chat.js', 'js/ui-paper.js',
   'curriculum/sections.json', 'curriculum/errors.json',
 ];
@@ -47,6 +47,11 @@ self.addEventListener('fetch', e => {
   if (req.mode === 'navigate') {
     // 外壳按相对路径加载 js/，只能在 App 根目录打开。打错的地址回到 /emma-math/，带着 ?mock=1 这类参数。
     const root = new URL(BASE).pathname;
+    // v0.11 小实验的沙盒页：讲题屏里的 iframe 打开它，照常给缓存里的那一份
+    if (url.pathname === root + 'lab.html') {
+      e.respondWith(caches.match(new URL('lab.html', BASE).href, { cacheName: CACHE }).then(hit => hit || fetch(req)));
+      return;
+    }
     if (url.pathname !== root && url.pathname !== root + 'index.html') {
       e.respondWith(Response.redirect(BASE + url.search, 302));
       return;

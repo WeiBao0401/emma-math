@@ -73,6 +73,8 @@
 // 要讲的题，按顺序：[idx] 或 [{ photoId, idx }]）。写回：explain（本文件的状态，纯数据）、queue。
 import { h, icon, mathText, toast, skBars, teacherAvatar } from './ui-dom.js';
 import { createWaitFun } from './waitfun.js';
+import { mountVisual } from './visual.js';
+import { LAB_SYSTEM, labUser, cleanLab, mountLab } from './lab.js';
 import { check, compute } from './mathcheck.js';
 import { plain } from './mathview.js';
 import * as NB from './notebook.js';
@@ -125,6 +127,11 @@ export const COPY = {
   mine: '你写的', correct: '正确的', myAnswer: '你的答案', rightAnswer: '正确答案', notWritten: '（没写）',
   nextStep: '下一步',
   remember: '记住这一句',
+  labAsk: '做个小实验，动手看看',
+  labAgain: '再做一次小实验',
+  labMaking: '我在做一个小实验，大约半分钟……',
+  labFailed: '小实验没做出来，再试一次。',
+  labTitle: '小实验：动手试试',
   understood: '懂了，做一道',
   confused: '还是不太懂',
   againIntro: '没关系。再看一遍这两句。',
@@ -1629,8 +1636,10 @@ export function createExplain(ctx) {
     const steps = d.explain || [];
     const shown = Math.min(st.explainShown || 1, Math.max(1, steps.length));
     const allShown = shown >= steps.length;
+    // v0.11 图挂在它那一步下面，点到那一步才出来
     const stepList = steps.length ? h('ol', { className: 'ex-steps' }, steps.slice(0, shown).map((t, i) =>
-      h('li', { className: 'ex-step' + (i === shown - 1 ? ' last' : '') }, h('span', { className: 'ex-step-n', text: String(i + 1) }), mathText(t, { className: 'ex-step-t' })))) : null;
+      h('li', { className: 'ex-step' + (i === shown - 1 ? ' last' : '') }, h('span', { className: 'ex-step-n', text: String(i + 1) }), mathText(t, { className: 'ex-step-t' }),
+        d.visual && d.visual.at === i ? vizOf(c, d) : null))) : null;
     const out = cv.only
       // 只有正确的一栏：先一步步讲思路，全部点开以后再给完整过程
       ? [noteEl(st.note), soft, h('p', { className: 'ex-instr ex-nowork', text: COPY.noWork }), h('h2', { className: 'sec-h ex-sec', text: COPY.howTo }), stepList,
@@ -1641,6 +1650,7 @@ export function createExplain(ctx) {
     if (!allShown) {
       out.push(h('div', { className: 'btn-row' }, h('button', { type: 'button', className: 'btn', text: COPY.nextStep, on: { click: () => dispatch({ type: 'next-step' }) } })));
     } else {
+      out.push(labBlock(c));
       if (str(d.remember)) out.push(h('div', { className: 'ex-remember' }, h('p', { className: 'label', text: COPY.remember }), mathText(d.remember, { tag: 'p', className: 'ex-remember-t' })));
       if (st.again) {
         const last = steps[steps.length - 1];
@@ -1661,6 +1671,48 @@ export function createExplain(ctx) {
     }
     out.push(flagBtn(c, p.stem));
     return out;
+  }
+
+  // ------------------------------------------------ v0.11 画给她看、小实验
+  // 图的节点记在这道题上：她点到第几步、拖到哪里，重画这一屏时不丢
+  function vizOf(c, d) {
+    if (c.viz && c.viz.d === d) return c.viz.el;
+    let el = null;
+    try { el = mountVisual(d.visual); } catch (e) { console.warn('visual', e); }
+    c.viz = { d, el };
+    return el;
+  }
+  // 小实验：讲完以后可以点“做个小实验，动手看看”；做好的存在讲题状态里（st.lab.html），切走再回来不用重做
+  function labBlock(c) {
+    const L = c.st.lab || null;
+    if (L && L.html) {
+      if (!c.labEl || c.labEl.html !== L.html) c.labEl = { html: L.html, el: mountLab(L.html) };
+      return h('div', { className: 'ex-lab' }, h('p', { className: 'label', text: COPY.labTitle }), c.labEl.el);
+    }
+    if (c.labJob) return h('div', { className: 'lab-wait' }, h('p', { className: 'small dots', text: COPY.labMaking }), c.labJob.fun || (c.labJob.fun = createWaitFun(ctx)));
+    return h('div', { className: 'btn-row ex-lab-row' },
+      L && L.failed ? h('p', { className: 'small', text: L.failed }) : null,
+      h('button', { type: 'button', className: 'btn quiet lab-ask', on: { click: () => makeLab(c) } }, icon('bulb'), h('span', { text: L && L.failed ? COPY.labAgain : COPY.labAsk })));
+  }
+  async function makeLab(c) {
+    if (c.labJob) return;
+    c.labJob = {};
+    render(true);
+    let lab;
+    try {
+      const r = await ctx.ai.ask('lab', { system: LAB_SYSTEM, raw: true, text: labUser({ problem: c.problem, diagnosis: c.st.diagnosis }) });
+      const html = cleanLab(r.text);
+      if (!html) throw Object.assign(new Error('not html'), { code: 'parse' });
+      lab = { html };
+    } catch (e) {
+      console.warn('lab', e);
+      lab = { failed: kidMessage(e, { where: 'explain' }) || COPY.labFailed };
+    }
+    c.labJob = null;
+    if (cur !== c) return;
+    c.st = { ...c.st, lab };
+    flowSet({ explain: { ...c.st, problem: c.problem } });
+    render(true);
   }
 
   function doneViewEl(c) {

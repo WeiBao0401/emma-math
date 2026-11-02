@@ -27,6 +27,7 @@
 //             “我觉得我是对的” on the confirm screen
 // Variant   { level, q, answer, answer_kind, form, unit, trap, trap_answer, steps, checked: 'program' | 'models' }
 //           本机模板出的题另带 template: <错因 id>（templates.js）
+import { normalizeVisual } from './visual.js';
 import { TASKS } from './config.js';
 import { check, compute } from './mathcheck.js';
 import { hasTemplate, makeVariants } from './templates.js';
@@ -85,8 +86,16 @@ export function normalizeDiagnosis(raw) {
     answer: str(r.answer), answer_kind: kindOf(r.answer_kind), form: str(r.form), unit: str(r.unit),
     solution: strs(r.solution), wrong_line: wl, wrong_step: str(r.wrong_step), error_type: str(r.error_type), tag: str(r.tag),
     section: (str(r.section).match(/^\d+(?:\.[\dP]+)*/) || [str(r.section)])[0], why: str(r.why), hint1: two(r.hint1), hint2: str(r.hint2), explain: strs(r.explain).slice(0, 6),
-    self_explain: two(r.self_explain), remember: str(r.remember), twin, doubt: str(r.doubt),
+    self_explain: two(r.self_explain), remember: str(r.remember), twin, doubt: str(r.doubt), visual: visualOf(r.visual, strs(r.explain).slice(0, 6).length),
   };
+}
+
+// v0.11 讲清楚那几步里配的一张图：画不出来的给 null；at 是挂在第几步下面（从 0 开始，越界就挂最后一步）
+function visualOf(raw, steps) {
+  const spec = normalizeVisual(raw);
+  if (!spec) return null;
+  const at = Number.isInteger(Number(raw.at)) ? Number(raw.at) : 0;
+  return { ...spec, at: Math.max(0, Math.min(Math.max(0, steps - 1), at)) };
 }
 
 function normalizeVariant(v) {

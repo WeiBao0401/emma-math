@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<!-- 小实验的沙盒（lab.js）：App 用 sandbox="allow-scripts" 打开这一页（不同源，读不到 App 的数据），把模型写的页面发进来写上。
+     这里允许页面自己的内联脚本和样式，别的都不行：不联网、不加载外部文件。 -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>小实验</title>
+<style>body{margin:0;background:#FBF8F1;color:#8A929E;font:15px -apple-system,"PingFang SC",sans-serif;padding:24px}</style>
+</head>
+<body>
+<p>正在摆好小实验……</p>
+<script>
+addEventListener('message', function (e) {
+  if (e.source !== parent || !e.data || e.data.kind !== 'lab' || typeof e.data.html !== 'string') return;
+  document.open();
+  document.write(e.data.html);
+  document.close();
+});
+parent.postMessage({ kind: 'lab-ready' }, '*');
+</script>
+</body>
+</html>

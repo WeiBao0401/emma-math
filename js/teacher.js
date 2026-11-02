@@ -4,7 +4,8 @@
 //   teacherSystem({ profileText, progress, exam, tags }) -> string    system prompt for every chat turn
 //   probeUser(point) -> string            the hidden first user turn when the teacher starts a talk on a weak point
 //   problemContext({ problem, diagnosis, step }) -> string   hidden context when she asks about a problem (step: where she paused)
-//   splitReply(text) -> { display, practice, notes, progress }   strips 【练习】【记录】【进度】 lines; display is what she reads
+//   splitReply(text) -> { display, practice, notes, progress, quiz, visual, lab }   strips 【练习】【记录】【进度】【出卷】【图】【实验】 lines
+//     visual（v0.11）：visual.normalizeVisual 规整过的图 | null    lab：{ goal, idea } 要现做的小实验 | null
 //     progress（v0.7）：她说了课上学到哪，老师写的节编号，'' 没有
 //     practice: { q, answer, answer_kind, form } | null      notes: [{ kind: 'gap' | 'ok', tag, point, note }]
 //   visibleSoFar(text) -> string          while streaming: the text without a started hidden line
@@ -14,8 +15,11 @@
 // The hidden lines are plain text the model writes at the very end ("【练习】{json}", "【记录】{json}"), so they also
 // work when streaming; JSON inside may have single LaTeX backslashes, repaired like every other reply.
 import { parseModelJSON } from './ai.js';
+import { normalizeVisual } from './visual.js';
 
-export const QUICK_REPLIES = ['懂了', '还是不懂', '举个例子', '出一道题考考我'];
+const str = v => (v === null || v === undefined ? '' : String(v)).trim();
+
+export const QUICK_REPLIES = ['懂了', '还是不懂', '举个例子', '画出来给我看', '出一道题考考我'];
 
 export function teacherSystem({ profileText = '', progress = '', exam = '', tags = [], book = '' } = {}) {
   const tagList = tags.length ? tags.map(t => `${t.id}：${t.name}`).join('\n') : '（没有）';
@@ -26,7 +30,7 @@ export function teacherSystem({ profileText = '', progress = '', exam = '', tags
 怎么教（像一位很有经验、很耐心的老师，面对面坐在她旁边）：
 1. 先弄清她卡在哪。她问的问题背后，常常有一个没想通的地方。先问一个小问题，或者请她说说她是怎么想的，再对准那一点讲。她已经说清楚了，就直接讲。
 2. 一次只讲一个点，3 到 6 句话。讲完停下来：用一个小问题确认她懂没懂，或者请她自己做关键的那一步。不要一口气讲完整套。
-3. 多用具体的数、数轴、画图（用文字描述图）、代回去检验，少用术语。用课本里的叫法（有理数、乘方、去括号、合并同类项、等式的性质、移项）。
+3. 多用具体的数、代回去检验，少用术语；能画图就画（见下面的【图】和【实验】），她看到不懂的容易放弃，看得见就容易懂。用课本里的叫法（有理数、乘方、去括号、合并同类项、等式的性质、移项）。
 4. 她说不懂，就换一种讲法，别把原话再说一遍。
 5. 联系“你知道的她”：她以前错过的坑、已经跨过去的、最近在学的，自然地提一句，比如“这和你上周那道 \\(-2(a-3b)\\) 是同一个坑”。
 6. 她答对了，具体地说她哪里做对了；答错了，先说她做对的部分，再指出是哪一步，问她这一步是怎么想的。不说“粗心”“聪明”“超级棒”“很简单”“又错了”。
@@ -42,6 +46,12 @@ export function teacherSystem({ profileText = '', progress = '', exam = '', tags
 题目只考你们刚聊的那个点，数字简单，答案自己算两遍。出了题，正文里就不要再写答案。
 - 这一轮你看出她哪里没懂、或者哪里其实懂了，最后一行写
 【记录】{"kind":"gap 或 ok","tag":"从下面的错因标签里选一个 id，没有合适的写空","point":"知识点，一句话","note":"你看到的证据，一句话"}
+- 一张图能帮她看懂时（讲数轴上的加减、相反数、到原点的距离，解方程，合并同类项，−3² 和 (−3)² 这种对比，应用题的数量关系，线段和点的位置，角），写
+【图】{"type":"…","caption":"图下面一句话，告诉她看哪里"}
+type 和写法：numberline {"min":-6,"max":6,"points":[{"x":-3,"label":"A"}],"jumps":[{"from":0,"to":-3,"label":"−3"}],"dist":[{"a":-3,"b":0,"label":"|−3| = 3"}],"drag":false}；balance {"left":"3x+2","right":"11","steps":[{"do":"减去 2","left":"3x","right":"9"}]}；tiles {"terms":["3a","-2b","a"],"result":"4a-2b"}；compare {"left":{"title":"-3^2","lines":["=-(3\\times 3)","=-9"]},"right":{"title":"(-3)^2","lines":["=(-3)\\times(-3)","=9"]}}；bars {"bars":[{"label":"甲","parts":[{"len":3,"label":"x"}],"total":"共 80"}]}；line {"kind":"line","points":[{"name":"A","x":0},{"name":"B","x":6}],"marks":[{"from":"A","to":"B","label":"6"}],"cases":[{"title":"情况 1","points":[],"marks":[]}]}；angle {"deg":40,"name":"∠AOB","show":"complement|supplement|","drag":true}。图上的数要算对、和你讲的一致。正文里说一句“看下面的图”就好，不要再用文字描述图。
+- 她说“画出来给我看”，或者这个点靠上面几种图讲不清、要动手才明白时（比如乘方是几个相同的数相乘、去括号像给每个人分），写
+【实验】{"goal":"要她通过动手看懂的那一个点","idea":"怎么玩：拖什么、点什么、会看到什么"}
+程序会照这个现做一个能拖、能点的小网页放在你这句话下面（要等半分钟左右），正文里说一句“我给你做了个小实验，等它出来动手试试”。【图】能讲清的就用【图】，不要两个都写。
 - 她说了课上学到哪一节，最后一行写
 【进度】{"section":"人教版七上的节编号，比如 2.3.1"}
 
@@ -99,7 +109,7 @@ export function problemContext({ problem = {}, diagnosis = {}, step = '' } = {})
   return lines.filter(Boolean).join('\n');
 }
 
-const HIDDEN = /^[ \t]*【(练习|记录|进度|出卷)】\s*(\{[\s\S]*?\})\s*$/gm;
+const HIDDEN = /^[ \t]*【(练习|记录|进度|出卷|图|实验)】\s*(\{[\s\S]*?\})\s*$/gm;
 
 function parseLoose(json) {
   try { return parseModelJSON(json); } catch { return null; }
@@ -107,7 +117,7 @@ function parseLoose(json) {
 
 export function splitReply(text) {
   const raw = String(text ?? '');
-  let practice = null, progress = '', quiz = null;
+  let practice = null, progress = '', quiz = null, visual = null, lab = null;
   const notes = [];
   const display = raw.replace(HIDDEN, (_, kind, json) => {
     const o = parseLoose(json);
@@ -115,20 +125,24 @@ export function splitReply(text) {
       practice = { q: String(o.q).trim(), answer: String(o.answer).trim(), answer_kind: String(o.answer_kind || '').trim(), form: String(o.form || '').trim() };
     } else if (o && kind === '出卷' && !quiz) {
       quiz = o;   // v0.8 帮我出套题：要求问清楚了，quiz.normalizeSpec 再整理
+    } else if (o && kind === '图' && !visual) {
+      visual = normalizeVisual(o);   // v0.11 画不出来的给 null，就不画
+    } else if (o && kind === '实验' && !lab && str(o.goal)) {
+      lab = { goal: str(o.goal), idea: str(o.idea) };
     } else if (o && kind === '进度' && /^\d+(\.[\dP]+)*$/.test(String(o.section || '').trim())) {
       progress = String(o.section).trim();
     } else if (o && kind === '记录' && (o.kind === 'gap' || o.kind === 'ok')) {
       notes.push({ kind: o.kind, tag: String(o.tag || '').trim(), point: String(o.point || '').trim(), note: String(o.note || '').trim() });
     }
     return '';
-  }).replace(/【(练习|记录|进度|出卷)】[\s\S]*$/, '').replace(/\n{3,}/g, '\n\n').trim();
-  return { display, practice, notes, progress, quiz };
+  }).replace(/【(练习|记录|进度|出卷|图|实验)】[\s\S]*$/, '').replace(/\n{3,}/g, '\n\n').trim();
+  return { display, practice, notes, progress, quiz, visual, lab };
 }
 
 // While the reply streams in, a hidden line may be half written: show everything before it
 export function visibleSoFar(text) {
   const s = String(text ?? '');
-  const i = s.search(/【(练|记|进|出)|【$/);
+  const i = s.search(/【(练|记|进|出|图|实)|【$/);
   return (i >= 0 ? s.slice(0, i) : s).trimEnd();
 }
 

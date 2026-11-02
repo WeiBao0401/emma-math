@@ -460,6 +460,25 @@ const DIRECT = {
   },
 };
 
+// v0.11 每个题型配一张图（prompts.js 第 11 条的形状）；order 故意不配，看没有图时的样子
+const VISUALS = {
+  powers: { type: 'compare', at: 2, left: { title: '-3^2', lines: ['=-(3\\times 3)', '=-9'] }, right: { title: '(-3)^2', lines: ['=(-3)\\times(-3)', '=9'] },
+    caption: '左边没有括号，平方只管 3；右边有括号，整个 −3 一起平方。' },
+  brackets: { type: 'tiles', at: 2, terms: ['6a', '-3b', '-2a', '+6b'], result: '4a+3b', caption: '去完括号，同类项按颜色归队再合并。' },
+  equation: { type: 'balance', at: 2, left: '\\frac{x-1}{2}-\\frac{2x+1}{3}', right: '1',
+    steps: [{ do: '乘 6', left: '3(x-1)-2(2x+1)', right: '6' }, { do: '去括号、合并', left: '-x-5', right: '6' }, { do: '加 5', left: '-x', right: '11' }, { do: '乘 −1', left: 'x', right: '-11' }],
+    caption: '每一步两边做一样的事，天平一直是平的。右边的 1 也要乘 6。' },
+  geometry: { type: 'line', at: 1, kind: 'line', points: [{ name: 'A', x: 0 }, { name: 'B', x: 10 }],
+    cases: [
+      { title: 'C 在 A、B 之间', points: [{ name: 'A', x: 0 }, { name: 'C', x: 6 }, { name: 'B', x: 10 }, { name: 'M', x: 3 }], marks: [{ from: 'A', to: 'B', label: '10' }, { from: 'C', to: 'B', label: '4' }, { from: 'A', to: 'M', label: '3' }] },
+      { title: 'C 在 B 右边', points: [{ name: 'A', x: 0 }, { name: 'B', x: 10 }, { name: 'C', x: 14 }, { name: 'M', x: 7 }], marks: [{ from: 'A', to: 'B', label: '10' }, { from: 'B', to: 'C', label: '4' }, { from: 'A', to: 'M', label: '7' }] },
+    ], caption: '点上面的两个按钮，看 C 的两种位置。' },
+  wordproblem: { type: 'bars', at: 1, bars: [
+    { label: '7 人一组', parts: [{ len: 56, label: '7x 个位子坐满' }, { len: 3, label: '+3' }], total: '= 总人数' },
+    { label: '8 人一组', parts: [{ len: 59, label: '8x 个位子，其中 5 个空着', unknown: true }], total: '− 5 = 总人数' },
+  ], caption: '总人数一样长：第一行比位子多 3，第二行比位子少 5。' },
+};
+
 function explainOf(topic, direct = false) {
   const b = BANK[topic], m = MORE[topic];
   const d = direct ? DIRECT[topic] : null;
@@ -468,7 +487,7 @@ function explainOf(topic, direct = false) {
     wrong_line: d ? -1 : m.wrong_line, wrong_step: d ? '' : b.wrong_step, error_type: m.error_type, tag: m.tag, section: m.section,
     why: d ? d.why : b.why, hint1: copy(m.hint1), hint2: m.hint2, explain: [...(d ? d.explain : b.explain)],
     self_explain: d ? { q: KEY_Q, options: [...d.options], answer: 0 } : copy(m.self_explain), remember: b.remember,
-    twin: copy(m.twin), doubt: '',
+    twin: copy(m.twin), doubt: '', visual: VISUALS[topic] ? copy(VISUALS[topic]) : null,
   };
 }
 
@@ -533,6 +552,7 @@ export const MOCK_TRANSCRIPT = '老师，负三的平方为什么是负九？';
 export function mockText(task, opts = {}) {
   if (task === 'listen') return MOCK_TRANSCRIPT;
   if (task === 'chat') return mockChat(opts);
+  if (task === 'lab') return MOCK_LAB;
   return JSON.stringify(mockAnswer(task, opts));
 }
 
@@ -550,6 +570,31 @@ const note = (kind, topic, note) => hidden('记录', { kind, tag: MORE[topic].ta
 
 // written like gpt-5.4 answers with teacher.js: short sentences, one point, inline \( \), at most 4 list items,
 // then a small question or a practice line. Single backslashes in the 【练习】 JSON, the way models write it.
+// v0.11 “画出来给我看”：一张对比图；说“做个实验”：现做一页小实验
+const DRAW = L`好，画出来看。左右两边一行一行点开，看看哪里开始不一样。
+【图】{"type":"compare","left":{"title":"-3^2","lines":["=-(3\\times 3)","=-9"]},"right":{"title":"(-3)^2","lines":["=(-3)\\times(-3)","=9"]},"caption":"没有括号，平方只管 3；有括号，−3 整个被平方。"}`;
+const DRAW_LAB = L`我给你做了个小实验，等它出来动手试试：拖动底数和指数，看乘方到底是几个谁相乘。
+【实验】{"goal":"乘方是几个相同的数相乘，负号在不在括号里结果不同","idea":"一个滑块选指数，两个按钮切换 −3² 和 (−3)²，下面一排写出相乘的式子和结果"}`;
+export const MOCK_LAB = `<!doctype html><html><head><meta charset="utf-8"><style>
+body{margin:0;padding:16px;background:#FBF8F1;color:#1E2633;font:17px -apple-system,"PingFang SC",sans-serif}
+h1{font-size:20px;margin:0 0 6px}p{margin:6px 0}.row{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+button{min-height:44px;padding:0 16px;border-radius:8px;border:1px solid #2F6B5A;background:#fff;color:#2F6B5A;font:600 16px inherit}
+button.on{background:#2F6B5A;color:#fff}.big{font-size:26px;margin:14px 0}.mark{background:#F3D978;padding:0 4px;border-radius:4px}
+input{width:100%;height:44px}</style></head><body>
+<h1>乘方：几个谁相乘？（模拟的小实验）</h1><p>点上面两个按钮，拖下面的滑块，看看会发生什么。</p>
+<div class="row"><button id="a" class="on">−3ⁿ（没有括号）</button><button id="b">(−3)ⁿ（有括号）</button></div>
+<input id="n" type="range" min="1" max="5" value="2"><div class="big" id="out"></div><p id="say"></p>
+<script>
+let paren=false;const sup=n=>'¹²³⁴⁵'[n-1];
+function draw(){const n=+document.getElementById('n').value;
+const parts=Array(n).fill(paren?'(−3)':'3').join(' × ');const v=Math.pow(3,n)*(paren&&n%2?-1:1)*(paren?1:-1);
+document.getElementById('out').innerHTML=(paren?'(−3)'+sup(n):'−3'+sup(n))+' = '+(paren?'':'−(')+parts+(paren?'':')')+' = <span class="mark">'+(v<0?'−':'')+Math.abs(v)+'</span>';
+document.getElementById('say').textContent=paren?'有括号：'+n+' 个 (−3) 相乘，负号的个数是'+(n%2?'单数，结果是负的。':'双数，结果是正的。'):'没有括号：先算 '+n+' 个 3 相乘，最后再带上前面的负号，结果总是负的。';
+document.getElementById('a').className=paren?'':'on';document.getElementById('b').className=paren?'on':'';}
+document.getElementById('a').onclick=()=>{paren=false;draw()};document.getElementById('b').onclick=()=>{paren=true;draw()};
+document.getElementById('n').oninput=draw;draw();
+</script></body></html>`;
+
 const POWERS = {
   free: L`你问到点子上了。关键是看清：平方管的是谁。
 \(-3^2\) 没有括号，平方只管紧挨着它的 3，负号在外面等着。所以先算 \(3^2=9\)，再带上负号，得 \(-9\)。
@@ -684,6 +729,8 @@ export function mockChat({ messages = [], mockCase = '' } = {}) {
   const said = lastText.replace(context, '').trim();
   if (/还是不懂|没懂|不明白|听不懂|不太懂/.test(said)) return pick('retry');
   if (/例子/.test(said)) return pick('example');
+  if (/实验|动手/.test(said)) return DRAW_LAB;
+  if (/画/.test(said)) return DRAW;
   if (/出一道题|考考我|再来一道/.test(said)) return pick('quiz');
   if (/答案|我做|我写|我算|算出/.test(said)) return /不对|错/.test(said) ? POWERS.wrong : POWERS.right;
   if (/^(懂了|明白了|会了|知道了)/.test(said)) return POWERS.gotit;

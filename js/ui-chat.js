@@ -53,6 +53,8 @@ import { latestNote, isMock, NOTES_KEY } from './notes.js';
 import { textbookMap, teacherLine } from './bookmap.js';
 import { quizUser, normalizeSpec, specLine, makeQuiz, QUIZ_CAP } from './quiz.js';
 import { createWaitFun } from './waitfun.js';
+import { mountVisual } from './visual.js';
+import { LAB_SYSTEM, labUser, cleanLab, mountLab } from './lab.js';
 
 export const CHATS_CAP = 50;
 export const QUIZ_REPLIES = ['你定吧', '标准卷就好', '结合我的薄弱点'];
@@ -381,7 +383,7 @@ export function createChat(ctx) {
       const text = h('div', { className: 'chat-text' });
       text.innerHTML = renderMessage(str(m.display ?? splitReply(textOf(m.content)).display));   // renderText 先转义
       const showPast = m.practice && (m.practiceDone || !isLast) && !m.swapAsked;
-      return h('div', { className: 'chat-msg t' + (m.local ? ' local' : '') }, teacherAvatar('chat-av'), h('div', { className: 'chat-tbody' }, text, showPast ? pastPractice(m) : null, m.quizSpec ? quizCard(m) : null));
+      return h('div', { className: 'chat-msg t' + (m.local ? ' local' : '') }, teacherAvatar('chat-av'), h('div', { className: 'chat-tbody' }, text, vizOf(m), m.lab ? labCard(m) : null, showPast ? pastPractice(m) : null, m.quizSpec ? quizCard(m) : null));
     }
     const img = m.image || imageOf(m.content);
     const words = str(m.display ?? textOf(m.content));
@@ -623,6 +625,8 @@ export function createChat(ctx) {
       const parts = splitReply(raw);
       const msg = { role: 'assistant', content: raw, display: parts.display, at };
       if (parts.practice) msg.practice = parts.practice;
+      if (parts.visual) msg.visual = parts.visual;          // v0.11 老师画的图
+      if (parts.lab) msg.lab = { ...parts.lab, state: '' };  // v0.11 小实验：下面接着现做
       if (parts.quiz) msg.quizSpec = normalizeSpec(parts.quiz, ctx.curriculum);   // v0.8 要求问清楚了：接着出卷
       if (reply.partial) msg.partial = true;
       c.messages.push(msg);
@@ -636,6 +640,61 @@ export function createChat(ctx) {
     if (chat === c) render({ keepScroll: true });
     const last = c.messages[c.messages.length - 1];
     if (last && last.quizSpec && !last.quizState) startQuiz(c, last);
+    if (last && last.lab && !last.lab.state) startLab(c, last);
+  }
+
+  // ------------------------------------------------ v0.11 画给她看、小实验
+  // 图和小实验的节点按消息记住：重画对话时接着用，她点到第几步不会被打回去
+  const vizEls = new WeakMap();
+  function vizOf(m) {
+    if (!m.visual) return null;
+    let el = vizEls.get(m);
+    if (!el) { try { el = mountVisual(m.visual); } catch (e) { console.warn('visual', e); el = null; } if (el) vizEls.set(m, el); }
+    return el;
+  }
+  const labJobs = new Map();   // msg.at -> { fun }
+  const labEls = new WeakMap();
+  function labCard(m) {
+    const L = m.lab;
+    if (L.state === 'done' && L.html) {
+      let el = labEls.get(m);
+      if (!el) { el = mountLab(L.html, { title: L.goal || '小实验' }); labEls.set(m, el); }
+      return el;
+    }
+    const job = labJobs.get(m.at);
+    if (job || L.state === 'making') {
+      return h('div', { className: 'lab-wait' }, h('p', { className: 'small dots', text: '我在做小实验，大约半分钟……' }), job ? (job.fun || (job.fun = createWaitFun(ctx))) : null,
+        !job ? h('button', { type: 'button', className: 'btn quiet', text: '接着做', on: { click: () => { const c = chat; if (c) startLab(c, m); } } }) : null);
+    }
+    return h('div', { className: 'lab-wait' }, h('p', { className: 'small', text: L.state === 'failed' ? (L.error || '小实验没做出来。') : '' }),
+      h('button', { type: 'button', className: 'btn quiet', text: L.state === 'failed' ? '再做一次' : '做小实验', on: { click: () => { const c = chat; if (c) startLab(c, m); } } }));
+  }
+  function talkOf(c, upTo) {
+    const i = c.messages.indexOf(upTo);
+    return c.messages.slice(Math.max(0, i - 5), i + 1).filter(x => !x.hidden && !x.failed)
+      .map(x => `${x.role === 'user' ? '她' : '老师'}：${clip(plainMessage(str(x.display ?? textOf(x.content))), 160)}`).join('\n');
+  }
+  async function startLab(c, m) {
+    if (labJobs.has(m.at)) return;
+    labJobs.set(m.at, {});
+    m.lab.state = 'making';
+    m.lab.error = '';
+    if (chat === c) render({ keepScroll: true });
+    try {
+      const problem = c.stem ? { stem: c.stem, her_answer: c.herAnswer || '' } : null;
+      const r = await ctx.ai.ask('lab', { system: LAB_SYSTEM, raw: true, text: labUser({ problem, goal: m.lab.goal, idea: m.lab.idea, talk: talkOf(c, m) }) });
+      const html = cleanLab(r.text);
+      if (!html) throw Object.assign(new Error('not html'), { code: 'parse' });
+      m.lab.html = html;
+      m.lab.state = 'done';
+    } catch (e) {
+      console.warn('lab', e);
+      m.lab.state = 'failed';
+      m.lab.error = kidMessage(e, { where: 'chat' }) || '小实验没做出来，再试一次。';
+    }
+    labJobs.delete(m.at);
+    await saveChat(c);
+    if (chat === c) render({ keepScroll: true });
   }
 
   // ------------------------------------------------ v0.8 帮我出套题

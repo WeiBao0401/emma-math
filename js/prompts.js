@@ -95,13 +95,22 @@ export function diagnoseSystem({ sections = [], tags = [] } = {}) {
 8. remember：一句她记得住的要点，可以是顺口的短句。
 9. twin：一道“同构题”，结构和原题一样、只换数字，难度相同，答案是整数或简单分数。给 answer、answer_kind、form，以及 trap_answer（按她的错误想法做会得到的答案，必须和 answer 不一样）。
 10. doubt：照片和抄好的内容对不上、看不清、题目有歧义时，用一句话写出来；没有就写 ""。
-11. 如果说明里写了“这次不参考她写的过程”（她已经订正过，卷子上的步骤不是她当时的想法）：不要分析她写的步骤，wrong_line 写 -1，wrong_step 写 ""；why 写这类题学生最容易卡在哪；explain 直接讲正确思路：先说这道题考什么，再讲关键一步为什么这样想（3 到 5 步，完整过程已经在 solution 里，explain 里不要再整段抄一遍）；hint1、hint2 照常出（她自己再做一遍卡住时用）；self_explain 改成问“这道题的关键一步是什么”的二选一。
+11. visual：一张帮她“看见”的图，配在 explain 的某一步下面（at 写那一步的序号，从 0 开始）。她看到不懂的容易放弃，所以能画就画；程序会照你写的画准、并让她一步步点开或拖动。按题选一种：
+   - 有理数加减、相反数、绝对值、比大小：{"type":"numberline","min":-6,"max":6,"points":[{"x":-3,"label":"A"}],"jumps":[{"from":0,"to":-3,"label":"−3"},{"from":-3,"to":2,"label":"+5"}],"dist":[{"a":-3,"b":0,"label":"|−3| = 3"}],"drag":false}（jumps 一步一个，按算的顺序；drag 为 true 时她能拖一个点看相反数和绝对值）
+   - 解方程、等式的性质、移项：{"type":"balance","left":"3x+2","right":"11","steps":[{"do":"减去 2","left":"3x","right":"9"},{"do":"除以 3","left":"x","right":"3"}]}（left、right 写 LaTeX 不带 \\( \\)）
+   - 合并同类项、去括号以后整理：{"type":"tiles","terms":["3a","-2b","a","5b"],"result":"4a+3b"}
+   - 两个看着像、结果不同的式子（−3² 和 (−3)²、−(a−b) 和 −a−b）：{"type":"compare","left":{"title":"-3^2","lines":["=-(3\\times 3)","=-9"]},"right":{"title":"(-3)^2","lines":["=(-3)\\times(-3)","=9"]}}
+   - 应用题的数量关系：{"type":"bars","bars":[{"label":"甲","parts":[{"len":3,"label":"x"},{"len":2,"label":"多 20"}],"total":"共 80"},{"label":"乙","parts":[{"len":3,"label":"x"}]}]}（len 是相对长短，未知量可以加 "unknown":true）
+   - 直线、线段上的点（中点、线段和差、分类讨论）：{"type":"line","kind":"line","points":[{"name":"A","x":0},{"name":"B","x":6}],"marks":[{"from":"A","to":"B","label":"6 cm"}],"cases":[{"title":"C 在 B 右边","points":[...],"marks":[...]},{"title":"C 在 A、B 之间","points":[...],"marks":[...]}]}（要分类讨论时一定写 cases，每种位置一张）
+   - 角、余角、补角：{"type":"angle","deg":40,"name":"∠AOB","show":"complement","drag":true}
+   每种都加 "caption"：图下面一句话，告诉她看图的哪里。图上的数必须和讲解一致、算对。真的画不出（比如纯文字概念题）才写 null。
+12. 如果说明里写了“这次不参考她写的过程”（她已经订正过，卷子上的步骤不是她当时的想法）：不要分析她写的步骤，wrong_line 写 -1，wrong_step 写 ""；why 写这类题学生最容易卡在哪；explain 直接讲正确思路：先说这道题考什么，再讲关键一步为什么这样想（3 到 5 步，完整过程已经在 solution 里，explain 里不要再整段抄一遍）；hint1、hint2 照常出（她自己再做一遍卡住时用）；self_explain 改成问“这道题的关键一步是什么”的二选一。
 
 ${ANSWER_RULES}
 ${sectionsText(sections)}
 ${tagsText(tags)}
 ${JSON_RULES}
-格式：{"answer": "", "answer_kind": "", "form": "", "unit": "", "solution": ["正确过程，一行一步"], "wrong_line": 0, "wrong_step": "", "error_type": "", "tag": "", "section": "", "why": "", "hint1": {"q": "", "options": ["", ""], "answer": 0}, "hint2": "", "explain": [""], "self_explain": {"q": "我错在：", "options": ["", ""], "answer": 0}, "remember": "", "twin": {"q": "", "answer": "", "answer_kind": "", "form": "", "trap_answer": ""}, "doubt": ""}`;
+格式：{"answer": "", "answer_kind": "", "form": "", "unit": "", "solution": ["正确过程，一行一步"], "wrong_line": 0, "wrong_step": "", "error_type": "", "tag": "", "section": "", "why": "", "hint1": {"q": "", "options": ["", ""], "answer": 0}, "hint2": "", "explain": [""], "self_explain": {"q": "我错在：", "options": ["", ""], "answer": 0}, "remember": "", "twin": {"q": "", "answer": "", "answer_kind": "", "form": "", "trap_answer": ""}, "doubt": "", "visual": {"type": "", "at": 0, "caption": ""}}`;
 }
 
 export function variantsSystem({ sections = [] } = {}) {
@@ -135,7 +144,7 @@ export function userDiagnose(p, { confirmed = true } = {}) {
   const useWork = p.useWork !== false;
   return [
     `要讲的是照片里${p.no ? `第 ${p.no} 题` : '这道题'}。${confirmed ? '下面的内容学生已经核对过。' : ''}`,
-    useWork ? '' : '这次不参考她写的过程：她已经在卷子上订正过了，上面的步骤不是她当时的想法。请按第 11 条直接讲正确思路。',
+    useWork ? '' : '这次不参考她写的过程：她已经在卷子上订正过了，上面的步骤不是她当时的想法。请按第 12 条直接讲正确思路。',
     `题型：${p.type || ''}`,
     `题目：${p.stem || ''}`,
     p.options && p.options.length ? `选项：${p.options.join('；')}` : '',
